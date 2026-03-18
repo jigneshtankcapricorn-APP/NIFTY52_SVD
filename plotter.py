@@ -19,17 +19,17 @@ COLORS = {
     "down_candle":     "#ef5350",   # red
     "up_vol_va":       "#00bcd4",   # teal (value area up)
     "down_vol_va":     "#f06292",   # pink (value area down)
-    "up_vol_outside":  "#90a4ae",   # grey (outside value area)
-    "down_vol_outside":"#90a4ae",   # grey (outside value area)
-    "poc_line":        "#ff1744",   # red
+    "up_vol_outside":  "#b0bec5",   # light grey (outside value area)
+    "down_vol_outside":"#b0bec5",   # light grey (outside value area)
+    "poc_line":        "#e53935",   # red
     "vah_line":        "#1565c0",   # blue
     "val_line":        "#1565c0",   # blue
-    "weekly_poc":      "#00e676",   # green
-    "prev_high":       "#ff6f00",   # orange
-    "prev_low":        "#ff6f00",   # orange
-    "bg":              "#131722",   # dark background
-    "grid":            "#1e2130",   # dark grid
-    "text":            "#d1d4dc",   # light text
+    "weekly_poc":      "#00c853",   # green
+    "prev_high":       "#ef6c00",   # orange
+    "prev_low":        "#ef6c00",   # orange
+    "bg":              "#ffffff",   # white background
+    "grid":            "#e0e3eb",   # light grid
+    "text":            "#131722",   # dark text
 }
 
 
@@ -156,14 +156,14 @@ def build_chart(
         font          = dict(color=COLORS["text"], size=12),
         xaxis_rangeslider_visible = False,
         hovermode     = "x unified",
-        margin        = dict(l=60, r=80, t=50, b=40),
+        margin        = dict(l=10, r=80, t=40, b=40),
         legend        = dict(
-            bgcolor     = "#1e2130",
-            bordercolor = "#2a2e39",
+            bgcolor     = "#f5f5f5",
+            bordercolor = "#e0e3eb",
             borderwidth = 1,
             font        = dict(color=COLORS["text"]),
         ),
-        height = 750,
+        height = 600,
     )
 
     # Grid styling

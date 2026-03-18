@@ -9,23 +9,23 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# ─── Page Config (must be first) ──────────────────────────────────────────────
+# ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title = "Volume Profile Dashboard",
     page_icon  = "📊",
     layout     = "wide",
-    initial_sidebar_state = "expanded",
+    initial_sidebar_state = "collapsed",
 )
 
 # ─── Custom CSS ───────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Dark background */
-    .stApp { background-color: #0e1117; }
+    .stApp { background-color: #f0f3fa; }
+    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
 
     /* Login card */
     .login-card {
-        background: #161b27;
+        background: #1a2035;
         border-radius: 14px;
         padding: 40px 44px 36px 44px;
         max-width: 440px;
@@ -33,7 +33,6 @@ st.markdown("""
         box-shadow: 0 4px 32px rgba(0,0,0,0.45);
         text-align: center;
     }
-    .login-logo { font-size: 52px; margin-bottom: 6px; }
     .login-title {
         font-size: 26px; font-weight: 700;
         color: #e0e6f0; margin-bottom: 4px;
@@ -44,38 +43,40 @@ st.markdown("""
     }
     .login-badge {
         display: inline-block;
-        background: #1e2538;
-        color: #7a8499;
-        font-size: 11px;
-        padding: 5px 14px;
-        border-radius: 20px;
-        margin-top: 18px;
+        background: #1e2538; color: #7a8499;
+        font-size: 11px; padding: 5px 14px;
+        border-radius: 20px; margin-top: 18px;
         border: 1px solid #2a3050;
     }
 
-    /* Hide streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    /* Top controls bar */
+    .controls-bar {
+        background: #1a2035;
+        border-radius: 10px;
+        padding: 10px 20px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
 
     /* Signal cards */
-    .signal-bull {
-        background: #0d2b1d; border-left: 4px solid #00c853;
-        padding: 14px 18px; border-radius: 6px; margin-bottom: 10px;
+    .sig-bull { background:#e8f5e9; border-left:4px solid #00c853; padding:10px 16px; border-radius:6px; }
+    .sig-bear { background:#fce4e4; border-left:4px solid #f44336; padding:10px 16px; border-radius:6px; }
+    .sig-side { background:#fff8e1; border-left:4px solid #ffc107; padding:10px 16px; border-radius:6px; }
+
+    /* Section headers */
+    .sec-title {
+        font-size: 13px; font-weight: 600;
+        color: #4a5568; text-transform: uppercase;
+        letter-spacing: 0.5px; margin-bottom: 6px;
     }
-    .signal-bear {
-        background: #2b0d0d; border-left: 4px solid #ff1744;
-        padding: 14px 18px; border-radius: 6px; margin-bottom: 10px;
-    }
-    .signal-side {
-        background: #1d1d0d; border-left: 4px solid #ffd600;
-        padding: 14px 18px; border-radius: 6px; margin-bottom: 10px;
-    }
-    .level-box {
-        background: #161b27; border-radius: 8px;
-        padding: 12px 16px; margin-bottom: 8px;
-        border: 1px solid #1e2538;
-    }
+
+    /* Hide streamlit default elements */
+    #MainMenu {visibility:hidden;}
+    footer {visibility:hidden;}
+    header {visibility:hidden;}
+    [data-testid="collapsedControl"] {display:none;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,16 +85,14 @@ st.markdown("""
 # AUTH
 # ══════════════════════════════════════════════════════════════════════════════
 def check_login(username: str, password: str) -> bool:
-    correct_user = st.secrets.get("APP_USERNAME", "")
-    correct_pass = st.secrets.get("APP_PASSWORD", "")
-    return username == correct_user and password == correct_pass
+    return (username == st.secrets.get("APP_USERNAME", "") and
+            password == st.secrets.get("APP_PASSWORD", ""))
 
 
 def show_login():
-    """Render login page."""
     st.markdown("""
     <div class="login-card">
-        <div class="login-logo">📊</div>
+        <div style="font-size:52px;">📊</div>
         <div class="login-title">Volume Profile Dashboard</div>
         <div class="login-sub">
             Nifty 50 · Bank Nifty · Session Volume Profile<br>
@@ -104,135 +103,116 @@ def show_login():
 
     col1, col2, col3 = st.columns([1, 1.4, 1])
     with col2:
-        username = st.text_input("Username", placeholder="Enter username", label_visibility="visible")
-        password = st.text_input("Password", placeholder="Enter password", type="password", label_visibility="visible")
-
+        username = st.text_input("Username", placeholder="Enter username")
+        password = st.text_input("Password", placeholder="Enter password", type="password")
         if st.button("Login →", use_container_width=True, type="primary"):
             if check_login(username, password):
                 st.session_state["logged_in"] = True
                 st.rerun()
             else:
                 st.error("❌ Invalid username or password")
-
-        st.markdown("""
-        <div style="text-align:center;">
-            <span class="login-badge">🔒 Secured · Volume Profile Dashboard</span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center"><span class="login-badge">🔒 Secured · Volume Profile Dashboard</span></div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 def show_app():
-    from fetcher       import fetch_all, login, fetch_candles
+    from fetcher        import login, fetch_candles
     from volume_profile import calculate_all_sessions, get_key_levels
-    from plotter        import build_chart, build_signal_card, build_levels_table
+    from plotter        import build_chart, build_levels_table
 
-    # ─── Sidebar ──────────────────────────────────────────────────────────────
-    with st.sidebar:
-        st.markdown("## ⚙️ Settings")
+    # ─── Top Controls Bar ─────────────────────────────────────────────────────
+    c1, c2, c3, c4, c5, c6 = st.columns([1.2, 1.2, 1, 1, 1.2, 0.8])
 
-        symbol = st.selectbox(
-            "Instrument",
-            ["NIFTY", "BANKNIFTY"],
-            index=0,
-        )
-
-        show_candles = st.checkbox("Show Candles", value=True)
-
-        st.markdown("---")
-        st.markdown("### 📅 Data")
-        days = st.slider("Days of data", min_value=5, max_value=10, value=7)
-
+    with c1:
+        symbol = st.selectbox("Instrument", ["NIFTY", "BANKNIFTY"], label_visibility="collapsed")
+    with c2:
+        timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
+    with c3:
+        show_candles = st.checkbox("Candles", value=True)
+    with c4:
+        show_prev = st.checkbox("Prev Levels", value=True)
+    with c5:
         refresh = st.button("🔄 Refresh Data", use_container_width=True, type="primary")
-
-        st.markdown("---")
+    with c6:
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state["logged_in"] = False
             st.rerun()
 
-        st.markdown("---")
-        st.markdown(
-            f"<div style='color:#4a5568;font-size:11px;'>Last updated<br>{datetime.now().strftime('%d %b %Y %H:%M')}</div>",
-            unsafe_allow_html=True
-        )
+    st.divider()
 
     # ─── Load Data ────────────────────────────────────────────────────────────
-    cache_key = f"data_{symbol}_{days}"
+    cache_key = f"data_{symbol}_{timeframe}"
 
     if cache_key not in st.session_state or refresh:
-        with st.spinner(f"📡 Fetching {symbol} data from Angel One..."):
+        with st.spinner(f"📡 Fetching {symbol} {timeframe} data..."):
             try:
                 obj = login()
-                df  = fetch_candles(obj, symbol=symbol, interval="3m", days=days)
-                st.session_state[cache_key]         = df
-                st.session_state[f"profiles_{symbol}"] = calculate_all_sessions(df, symbol=symbol)
+                df  = fetch_candles(obj, symbol=symbol, interval=timeframe, days=7)
+                st.session_state[cache_key] = df
+                st.session_state[f"profiles_{symbol}_{timeframe}"] = calculate_all_sessions(df, symbol=symbol)
             except Exception as e:
-                st.error(f"❌ Data fetch failed: {e}")
+                st.error(f"❌ {e}")
                 st.stop()
 
     df       = st.session_state[cache_key]
-    profiles = st.session_state.get(f"profiles_{symbol}", [])
+    prof_key = f"profiles_{symbol}_{timeframe}"
+    if prof_key not in st.session_state:
+        st.session_state[prof_key] = calculate_all_sessions(df, symbol=symbol)
 
-    if not profiles:
-        profiles = calculate_all_sessions(df, symbol=symbol)
-        st.session_state[f"profiles_{symbol}"] = profiles
+    profiles = st.session_state[prof_key]
+    levels   = get_key_levels(profiles)
 
-    levels = get_key_levels(profiles)
+    # ─── CHART FIRST ──────────────────────────────────────────────────────────
+    fig = build_chart(
+        df           = df,
+        profiles     = profiles,
+        symbol       = symbol,
+        show_candles = show_candles,
+        show_prev_levels = show_prev,
+    )
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ─── Header ───────────────────────────────────────────────────────────────
-    st.markdown(f"## 📊 {symbol} — Session Volume Profile")
+    st.divider()
 
-    # ─── Signal + Key Levels ──────────────────────────────────────────────────
-    col_sig, col_lvl = st.columns([1, 1.6])
+    # ─── Details Below Chart ──────────────────────────────────────────────────
+    col_sig, col_lvl, col_hist = st.columns([1, 1, 1.4])
 
     with col_sig:
-        st.markdown("### 🎯 Signal")
-        signal_html = build_signal_card(levels, symbol)
-        st.markdown(signal_html, unsafe_allow_html=True)
-
-        st.markdown("### 📋 Key Levels for Tomorrow")
-        lvl_df = build_levels_table(levels)
-        st.dataframe(
-            lvl_df,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.markdown('<div class="sec-title">🎯 Signal</div>', unsafe_allow_html=True)
+        bias  = levels.get("bias", "SIDEWAYS")
+        emoji = levels.get("bias_emoji", "🟡")
+        detail= levels.get("bias_detail", "")
+        css   = {"BULLISH":"sig-bull","BEARISH":"sig-bear","SIDEWAYS":"sig-side"}.get(bias,"sig-side")
+        st.markdown(f'<div class="{css}"><b>{emoji} {bias} — {symbol}</b><br><small>{detail}</small></div>', unsafe_allow_html=True)
 
     with col_lvl:
-        st.markdown("### 📅 Session History")
-        history_rows = []
-        for p in reversed(profiles):
-            history_rows.append({
-                "Date":    p.date,
-                "POC":     f"{p.poc:.0f}",
-                "VAH":     f"{p.vah:.0f}",
-                "VAL":     f"{p.val:.0f}",
-                "High":    f"{p.day_high:.0f}",
-                "Low":     f"{p.day_low:.0f}",
-                "Close":   f"{p.day_close:.0f}",
-                "Bias":    f"{p.bias_emoji} {p.bias}",
-            })
-        st.dataframe(
-            pd.DataFrame(history_rows),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.markdown('<div class="sec-title">📋 Key Levels for Tomorrow</div>', unsafe_allow_html=True)
+        lvl_df = build_levels_table(levels)
+        st.dataframe(lvl_df, use_container_width=True, hide_index=True, height=245)
 
-    # ─── Chart ────────────────────────────────────────────────────────────────
-    st.markdown("### 📈 Chart")
-    fig = build_chart(
-        df            = df,
-        profiles      = profiles,
-        symbol        = symbol,
-        show_candles  = show_candles,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    with col_hist:
+        st.markdown('<div class="sec-title">📅 Session History</div>', unsafe_allow_html=True)
+        rows = []
+        for p in reversed(profiles):
+            rows.append({
+                "Date":  p.date,
+                "POC":   f"{p.poc:.0f}",
+                "VAH":   f"{p.vah:.0f}",
+                "VAL":   f"{p.val:.0f}",
+                "High":  f"{p.day_high:.0f}",
+                "Low":   f"{p.day_low:.0f}",
+                "Close": f"{p.day_close:.0f}",
+                "Bias":  f"{p.bias_emoji} {p.bias}",
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=245)
+
+    st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y %H:%M')} IST")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
+# ENTRY
 # ══════════════════════════════════════════════════════════════════════════════
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -241,3 +221,4 @@ if not st.session_state["logged_in"]:
     show_login()
 else:
     show_app()
+
