@@ -118,6 +118,21 @@ def build_chart(
     for profile in profiles:
         _add_profile_bars(fig, profile, df_plot, profile_width_pct)
 
+    # ─── Session separator lines (20px gap visual) ────────────────────────────
+    dates = sorted(set(df_plot.index.date))
+    for i, date in enumerate(dates):
+        day_df = df_plot[df_plot.index.date == date]
+        if day_df.empty:
+            continue
+        last_ts = day_df.index[-1]
+        fig.add_shape(
+            type="line",
+            x0=last_ts, x1=last_ts,
+            y0=0, y1=1,
+            xref="x", yref="paper",
+            line=dict(color="#cccccc", width=1, dash="dot"),
+        )
+
     # ─── Key Levels (prev day) ────────────────────────────────────────────────
     if show_prev_levels and len(profiles) >= 2:
         # Use second-to-last session as "previous day"

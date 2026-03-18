@@ -47,51 +47,77 @@ def login() -> SmartConnect:
     return obj
 
 
-def get_futures_token(symbol: str = "NIFTY") -> dict:
+def get_available_expiries(symbol: str = "NIFTY") -> list:
     """
-    Auto-detect the nearest expiry futures token from Angel One scrip master.
-
-    Parameters:
-        symbol : "NIFTY" or "BANKNIFTY"
-
-    Returns:
-        dict with token, trading symbol, expiry date
+    Get all available future expiries for a symbol.
+    Returns list of dicts: [{label, token, symbol, expiry, expiry_dt}]
     """
-    print(f"🔍 Fetching scrip master for {symbol} futures token...")
-
     resp = requests.get(SCRIP_MASTER_URL, timeout=15)
     resp.raise_for_status()
     data = resp.json()
+    df   = pd.DataFrame(data)
 
-    df = pd.DataFrame(data)
-
-    # For indices like NIFTY, BANKNIFTY → FUTIDX
     fut = df[
         (df["name"] == symbol) &
         (df["instrumenttype"] == "FUTIDX")
     ].copy()
 
     if fut.empty:
-        raise ValueError(f"❌ No futures found for {symbol} in scrip master!")
+        return []
 
-    # Parse expiry dates
     fut["expiry_dt"] = pd.to_datetime(fut["expiry"], format="%d%b%Y", errors="coerce")
-
-    # Only future or today expiries
     today = pd.Timestamp(datetime.now().date())
-    fut   = fut[fut["expiry_dt"] >= today]
+    fut   = fut[fut["expiry_dt"] >= today].sort_values("expiry_dt")
 
-    if fut.empty:
-        raise ValueError(f"❌ No valid upcoming expiry found for {symbol}!")
+    results = []
+    for _, row in fut.iterrows():
+        label = row["expiry_dt"].strftime("%b %Y").upper()
+        results.append({
+            "label":     label,
+            "token":     row["token"],
+            "symbol":    row["symbol"],
+            "expiry":    row["expiry"],
+            "expiry_dt": row["expiry_dt"],
+        })
 
-    # Pick nearest expiry
-    nearest = fut.sort_values("expiry_dt").iloc[0]
+    return results
+
+
+def get_futures_token(symbol: str = "NIFTY", expiry_label: str = None) -> dict:
+    """
+    Get futures token for a symbol. Optionally specify expiry month label like 'MAR 2026'.
+    If no label given, picks nearest expiry automatically.
+
+    Parameters:
+        symbol       : "NIFTY" or "BANKNIFTY"
+        expiry_label : e.g. "MAR 2026", "APR 2026" — if None picks nearest
+
+    Returns:
+        dict with token, trading symbol, expiry date
+    """
+    print(f"🔍 Fetching scrip master for {symbol} futures token...")
+
+    expiries = get_available_expiries(symbol)
+
+    if not expiries:
+        raise ValueError(f"❌ No futures found for {symbol}!")
+
+    if expiry_label:
+        # Find matching expiry
+        matched = [e for e in expiries if e["label"] == expiry_label]
+        if not matched:
+            raise ValueError(f"❌ Expiry '{expiry_label}' not found! Available: {[e['label'] for e in expiries]}")
+        nearest = matched[0]
+    else:
+        # Auto pick nearest
+        nearest = expiries[0]
 
     result = {
         "token":    nearest["token"],
         "symbol":   nearest["symbol"],
         "expiry":   nearest["expiry"],
         "exchange": "NFO",
+        "label":    nearest["label"],
     }
 
     print(f"✅ Found: {result['symbol']} | Expiry: {result['expiry']} | Token: {result['token']}")
@@ -102,16 +128,18 @@ def fetch_candles(
     obj: SmartConnect,
     symbol: str = "NIFTY",
     interval: str = "3m",
-    days: int = 7
+    days: int = 7,
+    expiry_label: str = None,
 ) -> pd.DataFrame:
     """
     Fetch historical candle data using futures token.
 
     Parameters:
-        obj      : Authenticated SmartConnect object
-        symbol   : "NIFTY" or "BANKNIFTY"
-        interval : "3m", "15m", "30m", "1h", "1d"
-        days     : Number of calendar days to fetch (default 7)
+        obj          : Authenticated SmartConnect object
+        symbol       : "NIFTY" or "BANKNIFTY"
+        interval     : "3m", "15m", "30m", "1h", "1d"
+        days         : Number of calendar days to fetch (default 7)
+        expiry_label : e.g. "MAR 2026", "APR 2026" — None = auto nearest
 
     Returns:
         pd.DataFrame with columns: datetime, open, high, low, close, volume
@@ -119,8 +147,8 @@ def fetch_candles(
     if interval not in INTERVALS:
         raise ValueError(f"❌ Unknown interval. Choose from {list(INTERVALS.keys())}")
 
-    # Auto-detect futures token
-    fut_info     = get_futures_token(symbol)
+    # Get futures token — specific month or auto nearest
+    fut_info     = get_futures_token(symbol, expiry_label=expiry_label)
     token        = fut_info["token"]
     exchange     = fut_info["exchange"]
     ang_interval = INTERVALS[interval]

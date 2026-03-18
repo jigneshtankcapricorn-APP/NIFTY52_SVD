@@ -123,19 +123,25 @@ def show_app():
     from plotter        import build_chart, build_levels_table
 
     # ─── Top Controls Bar ─────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5, c6 = st.columns([1.2, 1.2, 1, 1, 1.2, 0.8])
+    c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
 
     with c1:
         symbol = st.selectbox("Instrument", ["NIFTY", "BANKNIFTY"], label_visibility="collapsed")
     with c2:
         timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
     with c3:
-        show_candles = st.checkbox("Candles", value=True)
+        # Month dropdown — load available expiries
+        from fetcher import get_available_expiries
+        expiries     = get_available_expiries(symbol)
+        expiry_labels = [e["label"] for e in expiries]
+        expiry_label  = st.selectbox("Expiry Month", expiry_labels, index=0, label_visibility="collapsed")
     with c4:
-        show_prev = st.checkbox("Prev Levels", value=True)
+        show_candles = st.checkbox("Candles", value=True)
     with c5:
-        refresh = st.button("🔄 Refresh Data", use_container_width=True, type="primary")
+        show_prev = st.checkbox("Prev Levels", value=True)
     with c6:
+        refresh = st.button("🔄 Refresh Data", use_container_width=True, type="primary")
+    with c7:
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state["logged_in"] = False
             st.rerun()
@@ -143,21 +149,21 @@ def show_app():
     st.divider()
 
     # ─── Load Data ────────────────────────────────────────────────────────────
-    cache_key = f"data_{symbol}_{timeframe}"
+    cache_key = f"data_{symbol}_{timeframe}_{expiry_label}"
 
     if cache_key not in st.session_state or refresh:
-        with st.spinner(f"📡 Fetching {symbol} {timeframe} data..."):
+        with st.spinner(f"📡 Fetching {symbol} {expiry_label} {timeframe} data..."):
             try:
                 obj = login()
-                df  = fetch_candles(obj, symbol=symbol, interval=timeframe, days=7)
+                df  = fetch_candles(obj, symbol=symbol, interval=timeframe, days=7, expiry_label=expiry_label)
                 st.session_state[cache_key] = df
-                st.session_state[f"profiles_{symbol}_{timeframe}"] = calculate_all_sessions(df, symbol=symbol)
+                st.session_state[f"profiles_{cache_key}"] = calculate_all_sessions(df, symbol=symbol)
             except Exception as e:
                 st.error(f"❌ {e}")
                 st.stop()
 
     df       = st.session_state[cache_key]
-    prof_key = f"profiles_{symbol}_{timeframe}"
+    prof_key = f"profiles_{cache_key}"
     if prof_key not in st.session_state:
         st.session_state[prof_key] = calculate_all_sessions(df, symbol=symbol)
 
@@ -172,7 +178,7 @@ def show_app():
         show_candles = show_candles,
         show_prev_levels = show_prev,
     )
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
