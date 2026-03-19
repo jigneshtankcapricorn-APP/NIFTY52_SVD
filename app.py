@@ -109,7 +109,7 @@ def show_login():
     with col2:
         username = st.text_input("Username", placeholder="Enter username")
         password = st.text_input("Password", placeholder="Enter password", type="password")
-        if st.button("Login →", use_container_width=True, type="primary"):
+        if st.button("Login →", width="stretch", type="primary"):
             if check_login(username, password):
                 st.session_state["logged_in"] = True
                 st.rerun()
@@ -156,9 +156,9 @@ def show_app():
     with c5:
         show_prev = st.checkbox("Prev Levels", value=True)
     with c6:
-        refresh = st.button("🔄 Refresh Data", use_container_width=True, type="primary")
+        refresh = st.button("🔄 Refresh Data", width="stretch", type="primary")
     with c7:
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", width="stretch"):
             st.session_state["logged_in"] = False
             st.rerun()
 
@@ -209,7 +209,7 @@ def show_app():
     with col_lvl:
         st.markdown('<div class="sec-title">📋 Key Levels for Tomorrow</div>', unsafe_allow_html=True)
         lvl_df = build_levels_table(levels)
-        st.dataframe(lvl_df, use_container_width=True, hide_index=True, height=245)
+        st.dataframe(lvl_df, width="stretch", hide_index=True, height=245)
 
     with col_hist:
         st.markdown('<div class="sec-title">📅 Session History</div>', unsafe_allow_html=True)
@@ -225,7 +225,7 @@ def show_app():
                 "Close": f"{p.day_close:.0f}",
                 "Bias":  f"{p.bias_emoji} {p.bias}",
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=245)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=245)
 
     st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y %H:%M')} IST")
 
@@ -237,6 +237,190 @@ def show_app():
         import time
         time.sleep(180)
         st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCANNER PAGE
+# ══════════════════════════════════════════════════════════════════════════════
+def show_scanner():
+    from scanner import scan_instrument, is_scanner_time, is_market_hours, MAX_SCORE
+    from fetcher import STOCKS, INDICES, login
+
+    st.markdown("## 🔍 Morning Scanner — All 47 Instruments")
+
+    now_time = datetime.now()
+    if is_scanner_time():
+        st.success("✅ Best time to scan! Market has opened — 9:30 AM window active")
+    elif is_market_hours():
+        st.info("ℹ️ Scanner works best at 9:30 AM — results still useful anytime")
+    else:
+        st.warning("⚠️ Market closed — showing analysis based on last available data")
+
+    c1, c2, c3 = st.columns([2, 2, 1])
+    with c1:
+        run_btn   = st.button("🔍 Run Full Scan (All 47)", type="primary", width="stretch")
+    with c2:
+        quick_btn = st.button("⚡ Quick Scan (Indices + Top 10)", width="stretch")
+    with c3:
+        if st.button("🚪 Logout", width="stretch"):
+            st.session_state["logged_in"] = False
+            st.rerun()
+
+    st.divider()
+
+    scan_key = "scanner_results"
+
+    if run_btn or quick_btn:
+        instruments = [(s, f"{s} Index") for s in INDICES]
+        if quick_btn:
+            instruments += [(s, n) for s, n in list(STOCKS.items())[:10]]
+        else:
+            instruments += [(s, n) for s, n in STOCKS.items()]
+
+        progress_bar = st.progress(0)
+        status_text  = st.empty()
+        results      = []
+        obj          = login()
+        total        = len(instruments)
+
+        for i, (symbol, name) in enumerate(instruments):
+            status_text.markdown(f"📡 Scanning **{name}** ({i+1}/{total})...")
+            progress_bar.progress((i+1) / total)
+            result = scan_instrument(obj, symbol, name)
+            results.append(result)
+
+        progress_bar.empty()
+        status_text.empty()
+
+        order = {"TRADE": 0, "WATCH": 1, "SKIP": 2}
+        results.sort(key=lambda r: (order.get(r.recommendation, 3), -r.score))
+        st.session_state[scan_key]    = results
+        st.session_state["scan_time"] = datetime.now().strftime("%d %b %Y %H:%M")
+
+    if scan_key not in st.session_state:
+        st.markdown("""
+        <div style="text-align:center;padding:60px;color:#4a5568;">
+            <div style="font-size:48px;">🔍</div>
+            <div style="font-size:18px;margin-top:12px;">Click Run Scan to analyze all 47 instruments</div>
+            <div style="font-size:13px;margin-top:8px;color:#718096;">Best time: 9:30 AM after market opens</div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    results   = st.session_state[scan_key]
+    scan_time = st.session_state.get("scan_time", "")
+
+    trade_count = sum(1 for r in results if r.recommendation == "TRADE")
+    watch_count = sum(1 for r in results if r.recommendation == "WATCH")
+    skip_count  = sum(1 for r in results if r.recommendation == "SKIP")
+
+    gap_down_count = sum(1 for r in results if r.gap_type == "GAP DOWN" and abs(r.gap_pct) > 1)
+    gap_up_count   = sum(1 for r in results if r.gap_type == "GAP UP"   and abs(r.gap_pct) > 1)
+
+    if gap_down_count > 10:
+        st.error(f"⚠️ HIGH GAP DOWN DAY — {gap_down_count} stocks gapped down! Reduce position size!")
+    elif gap_up_count > 10:
+        st.warning(f"⚠️ HIGH GAP UP DAY — {gap_up_count} stocks gapped up! Watch for reversal!")
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("✅ Trade",  trade_count)
+    m2.metric("👀 Watch",  watch_count)
+    m3.metric("❌ Skip",   skip_count)
+    m4.metric("🕐 Scanned", scan_time)
+
+    st.divider()
+
+    tab1, tab2, tab3 = st.tabs([
+        f"✅ TRADE ({trade_count})",
+        f"👀 WATCH ({watch_count})",
+        f"❌ SKIP ({skip_count})"
+    ])
+
+    def render_cards(filtered):
+        if not filtered:
+            st.info("No instruments in this category")
+            return
+        for r in filtered:
+            if r.error:
+                continue
+            if r.recommendation == "TRADE":
+                border = "#00c853" if r.signal == "BULLISH" else "#ff1744"
+                bg     = "#0d2b1d" if r.signal == "BULLISH" else "#2b0d0d"
+            elif r.recommendation == "WATCH":
+                border, bg = "#ffd600", "#1d1d0d"
+            else:
+                border, bg = "#4a5568", "#1a1a1a"
+
+            score_bar = "█" * r.score + "░" * (MAX_SCORE - r.score)
+            gap_color = "#00c853" if r.gap_pct > 0 else "#ff1744" if r.gap_pct < 0 else "#a0aec0"
+
+            st.markdown(f"""
+            <div style="background:{bg};border-left:4px solid {border};
+                        border-radius:8px;padding:16px 20px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div>
+                        <span style="font-size:18px;font-weight:700;color:{border}">
+                            {r.bias_emoji} {r.name}
+                        </span>
+                        <span style="font-size:12px;color:#718096;margin-left:8px">({r.symbol})</span>
+                    </div>
+                    <div style="display:flex;gap:12px;align-items:center;">
+                        <span style="background:{border};color:#fff;padding:2px 10px;
+                              border-radius:4px;font-size:12px;font-weight:700">{r.recommendation}</span>
+                        <span style="font-size:12px;color:#a0aec0">
+                            Score: <b style="color:{border}">{r.score}/{MAX_SCORE}</b> {score_bar}
+                        </span>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+                            gap:8px;margin-top:12px;">
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">PRICE</div>
+                        <div style="font-size:14px;font-weight:600;color:#e2e8f0;">₹{r.price:.1f}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">GAP</div>
+                        <div style="font-size:14px;font-weight:600;color:{gap_color}">
+                            {r.gap_pct:+.2f}% {r.gap_type}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">PREV POC</div>
+                        <div style="font-size:14px;font-weight:600;color:#ff1744;">₹{r.prev_poc:.1f}</div>
+                        <div style="font-size:10px;color:#718096;">Price: {r.poc_position}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">VAH / VAL</div>
+                        <div style="font-size:13px;font-weight:600;color:#1e88e5;">
+                            ₹{r.prev_vah:.1f} / ₹{r.prev_val:.1f}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">WEEKLY POC</div>
+                        <div style="font-size:14px;font-weight:600;color:#00c853;">₹{r.weekly_poc:.1f}</div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:8px 12px;">
+                        <div style="font-size:10px;color:#718096;">OPENING SURGE</div>
+                        <div style="font-size:14px;font-weight:600;color:{'#ff6d00' if r.opening_surge else '#4a5568'}">
+                            {'⚡ ' + str(r.max_surge) + 'x' if r.opening_surge else 'None'}</div>
+                    </div>
+                </div>
+                <div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.05);
+                            border-radius:6px;font-size:12px;color:#a0aec0;">
+                    💡 {r.reason}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button(f"📊 View {r.symbol} Chart", key=f"goto_{r.symbol}"):
+                st.session_state["selected_symbol"] = r.symbol
+                st.session_state["active_page"]     = "chart"
+                st.rerun()
+
+    with tab1:
+        render_cards([r for r in results if r.recommendation == "TRADE"])
+    with tab2:
+        render_cards([r for r in results if r.recommendation == "WATCH"])
+    with tab3:
+        render_cards([r for r in results if r.recommendation == "SKIP"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -253,12 +437,12 @@ else:
     # ── Navigation ────────────────────────────────────────────────────────────
     nav1, nav2, nav3 = st.columns([1, 1, 8])
     with nav1:
-        if st.button("📊 Chart", use_container_width=True,
+        if st.button("📊 Chart", width="stretch",
                      type="primary" if st.session_state["active_page"] == "chart" else "secondary"):
             st.session_state["active_page"] = "chart"
             st.rerun()
     with nav2:
-        if st.button("🔍 Scanner", use_container_width=True,
+        if st.button("🔍 Scanner", width="stretch",
                      type="primary" if st.session_state["active_page"] == "scanner" else "secondary"):
             st.session_state["active_page"] = "scanner"
             st.rerun()
