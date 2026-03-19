@@ -13,10 +13,12 @@ from typing import List, Dict
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 BIN_SIZE = {
-    "NIFTY":     10,   # 10 points per bin
-    "BANKNIFTY": 20,   # 20 points per bin
+    "NIFTY":      10,   # 10 points per bin
+    "BANKNIFTY":  20,   # 20 points per bin
+    # Stocks — auto calculated based on price range if not listed
 }
-VALUE_AREA_PCT = 0.70  # 70% of total volume
+DEFAULT_STOCK_BIN_RATIO = 0.001  # 0.1% of price = bin size
+VALUE_AREA_PCT = 0.70
 
 
 # ─── Data Structures ──────────────────────────────────────────────────────────
@@ -109,7 +111,20 @@ def calculate_session_profile(
     Returns:
         SessionProfile object with all levels and bars
     """
-    bin_size = BIN_SIZE.get(symbol, 10)
+    # Auto bin size — fixed for indices, dynamic for stocks
+    if symbol in BIN_SIZE:
+        bin_size = BIN_SIZE[symbol]
+    else:
+        # For stocks: 0.1% of average price gives clean bins
+        avg_price = (df_session["high"].max() + df_session["low"].min()) / 2
+        raw_bin   = avg_price * DEFAULT_STOCK_BIN_RATIO
+        # Round to nearest clean number: 0.5, 1, 2, 5, 10, 25, 50 etc
+        for clean in [0.5, 1, 2, 5, 10, 25, 50, 100]:
+            if raw_bin <= clean:
+                bin_size = clean
+                break
+        else:
+            bin_size = 100
 
     if df_session.empty:
         raise ValueError(f"Empty session data for {date_str}")

@@ -118,23 +118,35 @@ def show_login():
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 def show_app():
-    from fetcher        import login, fetch_candles, get_available_expiries
+    from fetcher        import login, fetch_candles, get_available_expiries, INDICES, STOCKS, is_index
     from volume_profile import calculate_all_sessions, get_key_levels
     from plotter        import build_levels_table
     from chart_renderer import render_chart_html
     import streamlit.components.v1 as components
 
+    # ─── Build instrument dropdown ─────────────────────────────────────────────
+    instrument_options = {}
+    for idx in INDICES:
+        instrument_options[f"📊 {idx}"] = idx
+    for sym, name in STOCKS.items():
+        instrument_options[f"🏢 {name} ({sym})"] = sym
+
     # ─── Top Controls Bar ─────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
+    c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
 
     with c1:
-        symbol = st.selectbox("Instrument", ["NIFTY", "BANKNIFTY"], label_visibility="collapsed")
+        selected_label = st.selectbox("Instrument", list(instrument_options.keys()), index=0, label_visibility="collapsed")
+        symbol = instrument_options[selected_label]
     with c2:
         timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
     with c3:
-        expiries      = get_available_expiries(symbol)
-        expiry_labels = [e["label"] for e in expiries]
-        expiry_label  = st.selectbox("Expiry Month", expiry_labels, index=0, label_visibility="collapsed")
+        if is_index(symbol):
+            expiries      = get_available_expiries(symbol)
+            expiry_labels = [e["label"] for e in expiries]
+            expiry_label  = st.selectbox("Expiry Month", expiry_labels, index=0, label_visibility="collapsed")
+        else:
+            st.markdown("<div style='padding:8px 0;color:#4a5568;font-size:12px;'>NSE Cash</div>", unsafe_allow_html=True)
+            expiry_label = None
     with c4:
         show_candles = st.checkbox("Candles", value=True)
     with c5:

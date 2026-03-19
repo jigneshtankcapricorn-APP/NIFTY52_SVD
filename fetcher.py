@@ -17,6 +17,72 @@ INTERVALS = {
     "1d":  "ONE_DAY",
 }
 
+# ─── Indices (futures) ────────────────────────────────────────────────────────
+INDICES = ["NIFTY", "BANKNIFTY"]
+
+# ─── Top 45 NSE Stocks by Market Cap ─────────────────────────────────────────
+STOCKS = {
+    "RELIANCE":    "Reliance Industries",
+    "HDFCBANK":    "HDFC Bank",
+    "BHARTIARTL":  "Bharti Airtel",
+    "SBIN":        "SBI",
+    "ICICIBANK":   "ICICI Bank",
+    "TCS":         "TCS",
+    "BAJFINANCE":  "Bajaj Finance",
+    "INFY":        "Infosys",
+    "HINDUNILVR":  "HUL",
+    "LICI":        "Life Insurance",
+    "LT":          "L&T",
+    "SUNPHARMA":   "Sun Pharma",
+    "MARUTI":      "Maruti Suzuki",
+    "M&M":         "M&M",
+    "AXISBANK":    "Axis Bank",
+    "ITC":         "ITC",
+    "KOTAKBANK":   "Kotak Mah. Bank",
+    "NTPC":        "NTPC",
+    "TITAN":       "Titan Company",
+    "HCLTECH":     "HCL Technologies",
+    "ONGC":        "ONGC",
+    "ULTRACEMCO":  "UltraTech Cem.",
+    "BEL":         "Bharat Electron",
+    "ADANIPORTS":  "Adani Ports",
+    "ADANIPOWER":  "Adani Power",
+    "COALINDIA":   "Coal India",
+    "JSWSTEEL":    "JSW Steel",
+    "POWERGRID":   "Power Grid Corp",
+    "BAJAJFINSV":  "Bajaj Finserv",
+    "VEDL":        "Vedanta",
+    "HAL":         "Hind. Aeronautics",
+    "BAJAJ-AUTO":  "Bajaj Auto",
+    "AVENUESUPRA": "Avenue Super.",
+    "TATASTEEL":   "Tata Steel",
+    "NESTLEIND":   "Nestle India",
+    "ADANIENT":    "Adani Enterp.",
+    "ETERNAL":     "Eternal",
+    "HINDZINC":    "Hindustan Zinc",
+    "ASIANPAINT":  "Asian Paints",
+    "HINDALCO":    "Hindalco Inds.",
+    "IOC":         "IOCL",
+    "WIPRO":       "Wipro",
+    "SBILIFE":     "SBI Life Insuran",
+    "EICHERMOT":   "Eicher Motors",
+    "SHRIRAMFIN":  "Shriram Finance",
+}
+
+# ─── Cache for scrip master (load once per session) ───────────────────────────
+_SCRIP_MASTER_CACHE = None
+
+def get_scrip_master() -> pd.DataFrame:
+    """Load scrip master once and cache it."""
+    global _SCRIP_MASTER_CACHE
+    if _SCRIP_MASTER_CACHE is None:
+        print("📥 Loading scrip master...")
+        resp = requests.get(SCRIP_MASTER_URL, timeout=15)
+        resp.raise_for_status()
+        _SCRIP_MASTER_CACHE = pd.DataFrame(resp.json())
+        print(f"✅ Scrip master loaded: {len(_SCRIP_MASTER_CACHE)} instruments")
+    return _SCRIP_MASTER_CACHE
+
 
 def get_totp(totp_key: str) -> str:
     """Generate current TOTP code from secret key."""
@@ -124,6 +190,48 @@ def get_futures_token(symbol: str = "NIFTY", expiry_label: str = None) -> dict:
     return result
 
 
+def get_stock_token(symbol: str) -> dict:
+    """
+    Get NSE cash token for a stock from scrip master.
+    Parameters:
+        symbol : e.g. "RELIANCE", "TCS", "HDFCBANK"
+    Returns:
+        dict with token, symbol, exchange
+    """
+    print(f"🔍 Looking up NSE cash token for {symbol}...")
+    df = get_scrip_master()
+
+    # Try exact name match in NSE cash segment
+    match = df[
+        (df["name"] == symbol) &
+        (df["exch_seg"] == "NSE") &
+        (df["instrumenttype"] == "")
+    ]
+
+    if match.empty:
+        # Try symbol match
+        match = df[
+            (df["symbol"] == f"{symbol}-EQ") &
+            (df["exch_seg"] == "NSE")
+        ]
+
+    if match.empty:
+        raise ValueError(f"❌ Token not found for {symbol}! Check symbol name.")
+
+    row = match.iloc[0]
+    print(f"✅ Found: {row['symbol']} | Token: {row['token']}")
+    return {
+        "token":    str(row["token"]),
+        "symbol":   row["symbol"],
+        "exchange": "NSE",
+    }
+
+
+def is_index(symbol: str) -> bool:
+    """Check if symbol is an index or a stock."""
+    return symbol in INDICES
+
+
 def fetch_candles(
     obj: SmartConnect,
     symbol: str = "NIFTY",
@@ -132,35 +240,42 @@ def fetch_candles(
     expiry_label: str = None,
 ) -> pd.DataFrame:
     """
-    Fetch historical candle data using futures token.
+    Fetch historical candle data.
+    Automatically handles both indices (futures) and stocks (NSE cash).
 
     Parameters:
         obj          : Authenticated SmartConnect object
-        symbol       : "NIFTY" or "BANKNIFTY"
+        symbol       : Index: "NIFTY"/"BANKNIFTY" | Stock: "RELIANCE"/"TCS" etc
         interval     : "3m", "15m", "30m", "1h", "1d"
-        days         : Number of calendar days to fetch (default 7)
-        expiry_label : e.g. "MAR 2026", "APR 2026" — None = auto nearest
-
-    Returns:
-        pd.DataFrame with columns: datetime, open, high, low, close, volume
+        days         : Number of calendar days (default 7)
+        expiry_label : For indices only e.g. "MAR 2026" — None = auto nearest
     """
     if interval not in INTERVALS:
         raise ValueError(f"❌ Unknown interval. Choose from {list(INTERVALS.keys())}")
 
-    # Get futures token — specific month or auto nearest
-    fut_info     = get_futures_token(symbol, expiry_label=expiry_label)
-    token        = fut_info["token"]
-    exchange     = fut_info["exchange"]
     ang_interval = INTERVALS[interval]
 
-    # Date range
+    # ── Get token based on type ───────────────────────────────────────────────
+    if is_index(symbol):
+        # Index → use futures token
+        fut_info = get_futures_token(symbol, expiry_label=expiry_label)
+        token    = fut_info["token"]
+        exchange = fut_info["exchange"]
+        label    = f"{symbol} FUT"
+    else:
+        # Stock → use NSE cash token
+        stk_info = get_stock_token(symbol)
+        token    = stk_info["token"]
+        exchange = stk_info["exchange"]
+        label    = f"{symbol} ({STOCKS.get(symbol, symbol)})"
+
+    # ── Date range ────────────────────────────────────────────────────────────
     to_date   = datetime.now()
     from_date = to_date - timedelta(days=days)
+    from_str  = from_date.strftime("%Y-%m-%d %H:%M")
+    to_str    = to_date.strftime("%Y-%m-%d %H:%M")
 
-    from_str = from_date.strftime("%Y-%m-%d %H:%M")
-    to_str   = to_date.strftime("%Y-%m-%d %H:%M")
-
-    print(f"📡 Fetching {symbol} FUT | {interval} | {from_str} → {to_str}")
+    print(f"📡 Fetching {label} | {interval} | {from_str} → {to_str}")
 
     params = {
         "exchange":    exchange,
@@ -176,26 +291,18 @@ def fetch_candles(
         raise RuntimeError(f"❌ Data fetch failed: {response['message']}")
 
     raw = response["data"]
-
     if not raw:
         raise RuntimeError("❌ No data returned!")
 
-    # ─── Build DataFrame ──────────────────────────────────────────────────────
-    df = pd.DataFrame(raw, columns=["datetime", "open", "high", "low", "close", "volume"])
+    # ── Build DataFrame ───────────────────────────────────────────────────────
+    df = pd.DataFrame(raw, columns=["datetime","open","high","low","close","volume"])
     df["datetime"] = pd.to_datetime(df["datetime"])
     df.set_index("datetime", inplace=True)
-
-    # Filter market hours: 9:15 AM to 3:30 PM
     df = df.between_time("09:15", "15:30")
-
-    # Remove weekends
     df = df[df.index.dayofweek < 5]
-
     df = df.sort_index()
 
-    print(f"✅ Got {len(df)} candles | Volume check: {df['volume'].sum():,} total volume")
-    print(f"   From: {df.index[0]}  →  To: {df.index[-1]}")
-
+    print(f"✅ Got {len(df)} candles | Volume: {df['volume'].sum():,}")
     return df
 
 
