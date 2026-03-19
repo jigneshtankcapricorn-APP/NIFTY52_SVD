@@ -118,9 +118,11 @@ def show_login():
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 def show_app():
-    from fetcher        import login, fetch_candles
+    from fetcher        import login, fetch_candles, get_available_expiries
     from volume_profile import calculate_all_sessions, get_key_levels
-    from plotter        import build_chart, build_levels_table
+    from plotter        import build_levels_table
+    from chart_renderer import render_chart_html
+    import streamlit.components.v1 as components
 
     # ─── Top Controls Bar ─────────────────────────────────────────────────────
     c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
@@ -130,9 +132,7 @@ def show_app():
     with c2:
         timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
     with c3:
-        # Month dropdown — load available expiries
-        from fetcher import get_available_expiries
-        expiries     = get_available_expiries(symbol)
+        expiries      = get_available_expiries(symbol)
         expiry_labels = [e["label"] for e in expiries]
         expiry_label  = st.selectbox("Expiry Month", expiry_labels, index=0, label_visibility="collapsed")
     with c4:
@@ -170,15 +170,12 @@ def show_app():
     profiles = st.session_state[prof_key]
     levels   = get_key_levels(profiles)
 
-    # ─── CHART FIRST ──────────────────────────────────────────────────────────
-    fig = build_chart(
-        df           = df,
-        profiles     = profiles,
-        symbol       = symbol,
-        show_candles = show_candles,
-        show_prev_levels = show_prev,
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # ─── CHART — Lightweight Charts ───────────────────────────────────────────
+    from chart_renderer import render_chart_html
+    import streamlit.components.v1 as components
+
+    chart_html = render_chart_html(df, profiles, symbol=symbol)
+    components.html(chart_html, height=650, scrolling=False)
 
     st.divider()
 
