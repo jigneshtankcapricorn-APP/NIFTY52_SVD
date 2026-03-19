@@ -356,15 +356,7 @@ function renderAll() {{
     drawSurgeMarkers();
 }}
 
-// ── Volume Surge Markers on volume panel ─────────────────────────────────────
-RAW.surges.forEach(surge => {{
-    volSeries.createPriceLine({{
-        price:     surge.volume,
-        color:     '#ff6d00',
-        lineWidth: 0,
-        axisLabelVisible: false,
-    }});
-}});
+// ── Volume Surge Markers on canvas only ──────────────────────────────────────
 
 // ── Surge bar at bottom ───────────────────────────────────────────────────────
 const surgeBar = document.getElementById('surge-bar');
