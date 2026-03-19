@@ -77,6 +77,10 @@ st.markdown("""
     footer {visibility:hidden;}
     header {visibility:hidden;}
     [data-testid="collapsedControl"] {display:none;}
+
+    /* Scanner cards */
+    .scan-card { transition: all 0.2s; }
+    .scan-card:hover { transform: translateY(-2px); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -240,9 +244,29 @@ def show_app():
 # ══════════════════════════════════════════════════════════════════════════════
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "chart"
 
 if not st.session_state["logged_in"]:
     show_login()
 else:
-    show_app()
+    # ── Navigation ────────────────────────────────────────────────────────────
+    nav1, nav2, nav3 = st.columns([1, 1, 8])
+    with nav1:
+        if st.button("📊 Chart", use_container_width=True,
+                     type="primary" if st.session_state["active_page"] == "chart" else "secondary"):
+            st.session_state["active_page"] = "chart"
+            st.rerun()
+    with nav2:
+        if st.button("🔍 Scanner", use_container_width=True,
+                     type="primary" if st.session_state["active_page"] == "scanner" else "secondary"):
+            st.session_state["active_page"] = "scanner"
+            st.rerun()
+
+    st.divider()
+
+    if st.session_state["active_page"] == "chart":
+        show_app()
+    else:
+        show_scanner()
 
