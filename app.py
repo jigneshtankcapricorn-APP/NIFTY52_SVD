@@ -213,6 +213,15 @@ def show_app():
 
     st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y %H:%M')} IST")
 
+    # ─── Auto refresh every 3 min during market hours ─────────────────────────
+    now_ist = datetime.now()
+    hour, minute = now_ist.hour, now_ist.minute
+    total_mins = hour * 60 + minute
+    if 555 <= total_mins <= 930:  # 9:15 to 15:30
+        import time
+        time.sleep(180)
+        st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ENTRY

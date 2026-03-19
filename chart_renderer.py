@@ -70,7 +70,31 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
             "bars":    bars,
         })
 
-    return {"candles": candles, "volume": volume, "sessions": sessions}
+    # ── Volume Surge Detection (today only, 2.5x average) ────────────────────
+    SURGE_MULTIPLIER = 2.5
+    LOOKBACK         = 20
+
+    surges = []
+    vol_values = [v["value"] for v in volume]
+    today_date = df_plot.index[-1].date()
+
+    for i, (ts, row) in enumerate(df_plot.iterrows()):
+        if ts.date() != today_date:
+            continue
+        if i < LOOKBACK:
+            continue
+        avg = sum(vol_values[i-LOOKBACK:i]) / LOOKBACK
+        if avg > 0 and row["volume"] > avg * SURGE_MULTIPLIER:
+            surges.append({
+                "time":       int(ts.timestamp()),
+                "price":      round(float(row["close"]), 2),
+                "volume":     int(row["volume"]),
+                "avg":        round(avg, 0),
+                "multiplier": round(row["volume"] / avg, 1),
+                "timeStr":    ts.strftime("%H:%M"),
+            })
+
+    return {"candles": candles, "volume": volume, "sessions": sessions, "surges": surges}
 
 
 def render_chart_html(
@@ -107,11 +131,23 @@ body {{ background:#131722; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
 .bull {{ background:#0d2b1d; color:#00c853; border:1px solid #00c853; }}
 .bear {{ background:#2b0d0d; color:#ff1744; border:1px solid #ff1744; }}
 .side {{ background:#1d1d0d; color:#ffd600; border:1px solid #ffd600; }}
+.live-badge {{ background:#1a0a00; color:#ff6d00; border:1px solid #ff6d00; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }}
 #levels {{ display:flex; gap:16px; font-size:11px; }}
 .lvl {{ display:flex; gap:4px; align-items:center; font-weight:500; }}
+#surge-bar {{
+    position:fixed; bottom:0; left:0; right:0;
+    background:#1a1000; border-top:1px solid #ff6d00;
+    padding:4px 16px; font-size:11px; color:#ff6d00;
+    display:none; z-index:100; flex-wrap:wrap; gap:12px;
+}}
+.surge-item {{
+    background:#2a1500; border:1px solid #ff6d00;
+    padding:2px 8px; border-radius:4px; white-space:nowrap;
+}}
+#timer {{ font-size:10px; color:#4a5568; margin-left:auto; }}
 #wrap {{ width:100%; height:{height}px; display:flex; flex-direction:column; }}
 #chart    {{ width:100%; flex:5; position:relative; }}
-#volchart {{ width:100%; flex:1; border-top:1px solid #2a2e39; }}
+#volchart {{ width:100%; flex:1.2; border-top:1px solid #2a2e39; }}
 .price-label {{
     position:absolute; right:0;
     font-size:10px; font-weight:700;
@@ -125,6 +161,7 @@ body {{ background:#131722; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
 <div id="header">
     <h1>{title}</h1>
     <div id="bias-badge" class="badge side">🟡 SIDEWAYS</div>
+    <div id="live-badge" class="live-badge" style="display:none">🔴 LIVE</div>
     <div id="levels">
         <div class="lvl" style="color:#ff1744">POC <span id="lv-poc">—</span></div>
         <div class="lvl" style="color:#1e88e5">VAH <span id="lv-vah">—</span></div>
@@ -132,8 +169,10 @@ body {{ background:#131722; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
         <div class="lvl" style="color:#ef6c00">P.High <span id="lv-ph">—</span></div>
         <div class="lvl" style="color:#ef6c00">P.Low <span id="lv-pl">—</span></div>
         <div class="lvl" style="color:#00c853">W.POC <span id="lv-wpoc">—</span></div>
+        <div id="timer"></div>
     </div>
 </div>
+<div id="surge-bar"></div>
 <div id="wrap">
   <div id="chart"></div>
   <div id="volchart"></div>
@@ -314,9 +353,81 @@ function renderAll() {{
     }});
 
     updateLabels();
+    drawSurgeMarkers();
 }}
 
-chart.timeScale().subscribeVisibleTimeRangeChange(renderAll);
+// ── Volume Surge Markers on volume panel ─────────────────────────────────────
+RAW.surges.forEach(surge => {{
+    volSeries.createPriceLine({{
+        price:     surge.volume,
+        color:     '#ff6d00',
+        lineWidth: 0,
+        axisLabelVisible: false,
+    }});
+}});
+
+// ── Surge bar at bottom ───────────────────────────────────────────────────────
+const surgeBar = document.getElementById('surge-bar');
+if (RAW.surges && RAW.surges.length > 0) {{
+    surgeBar.style.display = 'flex';
+    surgeBar.innerHTML = '<b style="color:#ff6d00">⚡ Volume Surges Today:</b> ' +
+        RAW.surges.map(s =>
+            `<span class="surge-item">⚡ ${{s.timeStr}} @ ${{s.price}} — ${{s.multiplier}}x avg</span>`
+        ).join('');
+}}
+
+// ── Surge markers on canvas (orange triangles) ────────────────────────────────
+function drawSurgeMarkers() {{
+    if (!RAW.surges || !RAW.surges.length) return;
+    const ts = chart.timeScale();
+    RAW.surges.forEach(surge => {{
+        const x = ts.timeToCoordinate(surge.time);
+        const y = candleSeries.priceToCoordinate(surge.price);
+        if (x===null||y===null) return;
+        // Draw orange triangle marker
+        ctx.save();
+        ctx.fillStyle = '#ff6d00';
+        ctx.beginPath();
+        ctx.moveTo(x,      y + 15);
+        ctx.lineTo(x - 6,  y + 25);
+        ctx.lineTo(x + 6,  y + 25);
+        ctx.closePath();
+        ctx.fill();
+        // Label
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillStyle = '#ff6d00';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚡' + surge.multiplier + 'x', x, y + 36);
+        ctx.restore();
+    }});
+}}
+
+// ── Live mode detection ───────────────────────────────────────────────────────
+function isMarketHours() {{
+    const now = new Date();
+    const ist = new Date(now.toLocaleString('en-US', {{timeZone:'Asia/Kolkata'}}));
+    const h = ist.getHours(), m = ist.getMinutes();
+    const mins = h * 60 + m;
+    return mins >= 555 && mins <= 930; // 9:15 to 15:30
+}}
+
+if (isMarketHours()) {{
+    document.getElementById('live-badge').style.display = 'block';
+    // Auto-refresh every 3 minutes via parent Streamlit
+    let countdown = 180;
+    const timerEl = document.getElementById('timer');
+    setInterval(() => {{
+        countdown--;
+        const m = Math.floor(countdown/60);
+        const s = countdown % 60;
+        timerEl.textContent = `🔄 Refresh in ${{m}}:${{s.toString().padStart(2,'0')}}`;
+        if (countdown <= 0) {{
+            countdown = 180;
+            // Signal parent Streamlit to refresh
+            window.parent.postMessage({{type:'streamlit:rerun'}}, '*');
+        }}
+    }}, 1000);
+}}
 chart.timeScale().subscribeVisibleLogicalRangeChange(renderAll);
 chart.subscribeCrosshairMove(renderAll);
 window.addEventListener('resize', () => {{
