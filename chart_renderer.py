@@ -145,7 +145,7 @@ body {{ background:#131722; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
     padding:2px 8px; border-radius:4px; white-space:nowrap;
 }}
 #timer {{ font-size:10px; color:#4a5568; margin-left:auto; }}
-#wrap {{ width:100%; height:{height}px; display:flex; flex-direction:column; }}
+#wrap {{ width:100%; height:{height - 50}px; display:flex; flex-direction:column; }}
 #chart    {{ width:100%; flex:5; position:relative; }}
 #volchart {{ width:100%; flex:1.2; border-top:1px solid #2a2e39; }}
 .price-label {{

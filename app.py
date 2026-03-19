@@ -175,7 +175,7 @@ def show_app():
     import streamlit.components.v1 as components
 
     chart_html = render_chart_html(df, profiles, symbol=symbol)
-    components.html(chart_html, height=650, scrolling=False)
+    components.html(chart_html, height=720, scrolling=False)
 
     st.divider()
 
