@@ -165,11 +165,30 @@ def show_app():
     st.divider()
 
     # ─── Load Data ────────────────────────────────────────────────────────────
-    # Include today's date in cache key so data refreshes daily automatically
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    from datetime import timezone as tz
+    IST       = tz(pd.Timedelta(hours=5, minutes=30))
+    now_ist   = datetime.now(IST)
+    today_str = now_ist.strftime("%Y-%m-%d")
     cache_key = f"data_{symbol}_{timeframe}_{expiry_label}_{today_str}"
 
-    if cache_key not in st.session_state or refresh:
+    def needs_refresh():
+        if cache_key not in st.session_state:
+            return True
+        if refresh:
+            return True
+        try:
+            cached_df  = st.session_state[cache_key]
+            last_date  = pd.to_datetime(cached_df.index[-1], utc=True).tz_convert("Asia/Kolkata").date()
+            today      = now_ist.date()
+            now_mins   = now_ist.hour * 60 + now_ist.minute
+            market_open = 555 <= now_mins <= 930
+            if market_open and last_date < today:
+                return True
+        except:
+            return True
+        return False
+
+    if needs_refresh():
         with st.spinner(f"📡 Fetching {symbol} {timeframe} data..."):
             try:
                 obj = login()
@@ -177,7 +196,6 @@ def show_app():
                 st.session_state[cache_key] = df
                 st.session_state[f"profiles_{cache_key}"] = calculate_all_sessions(df, symbol=symbol)
             except Exception as e:
-                # Clear old cache on error and retry once
                 for key in list(st.session_state.keys()):
                     if key.startswith("data_"):
                         del st.session_state[key]
@@ -236,10 +254,8 @@ def show_app():
     st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y %H:%M')} IST")
 
     # ─── Auto refresh every 3 min during market hours ─────────────────────────
-    now_ist = datetime.now()
-    hour, minute = now_ist.hour, now_ist.minute
-    total_mins = hour * 60 + minute
-    if 555 <= total_mins <= 930:  # 9:15 to 15:30
+    now_mins = now_ist.hour * 60 + now_ist.minute
+    if 555 <= now_mins <= 930:
         import time
         time.sleep(180)
         st.rerun()

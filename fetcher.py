@@ -279,8 +279,10 @@ def fetch_candles(
         exchange = stk_info["exchange"]
         label    = f"{symbol} ({STOCKS.get(symbol, symbol)})"
 
-    # ── Date range ────────────────────────────────────────────────────────────
-    to_date   = datetime.now()
+    # ── Date range — MUST use IST timezone ───────────────────────────────────
+    from datetime import timezone
+    IST = timezone(timedelta(hours=5, minutes=30))
+    to_date   = datetime.now(IST)
     from_date = to_date - timedelta(days=days)
     from_str  = from_date.strftime("%Y-%m-%d %H:%M")
     to_str    = to_date.strftime("%Y-%m-%d %H:%M")
