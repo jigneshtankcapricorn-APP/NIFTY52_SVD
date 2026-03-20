@@ -11,17 +11,27 @@ from typing import List
 from volume_profile import SessionProfile, get_weekly_poc
 
 
-def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
+def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile], market_open: bool = False) -> dict:
     """Convert DataFrame + profiles into JSON-serializable dict for JS chart."""
 
     df_plot = df.copy()
     df_plot.index = pd.to_datetime(df_plot.index, utc=True).tz_convert("Asia/Kolkata")
 
     def to_chart_ts(ts):
-        # Strip timezone, treat as naive IST time, convert to unix
-        # This makes chart display 09:15 instead of 03:45
         naive = ts.replace(tzinfo=None)
         return int(naive.timestamp())
+
+    # ── Smart date filter ─────────────────────────────────────────────────────
+    # During market hours → show today + yesterday only (no zoom needed)
+    # After market close  → show full week
+    if market_open and len(profiles) >= 2:
+        # Get last 2 trading days
+        dates = sorted(set(df_plot.index.date))
+        show_dates = dates[-2:]  # today + yesterday
+        df_plot = df_plot[df_plot.index.date.map(lambda d: d in show_dates)]
+        profiles_to_show = profiles[-2:]  # last 2 sessions
+    else:
+        profiles_to_show = profiles
 
     # ── Candles ───────────────────────────────────────────────────────────────
     candles = []
@@ -45,7 +55,7 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
 
     # ── Sessions ──────────────────────────────────────────────────────────────
     sessions = []
-    for p in profiles:
+    for p in profiles_to_show:
         day_df = df_plot[df_plot.index.date == pd.to_datetime(p.date).date()]
         if day_df.empty:
             continue
@@ -77,14 +87,17 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
         })
 
     # ── Volume Surge Detection (today only, 2.5x average) ────────────────────
+    # Always use full df for surge detection regardless of view filter
+    df_full = df.copy()
+    df_full.index = pd.to_datetime(df_full.index, utc=True).tz_convert("Asia/Kolkata")
+
     SURGE_MULTIPLIER = 2.5
     LOOKBACK         = 20
+    surges           = []
+    today_date       = df_full.index[-1].date()
+    vol_values       = list(df_full["volume"])
 
-    surges = []
-    vol_values = [v["value"] for v in volume]
-    today_date = df_plot.index[-1].date()
-
-    for i, (ts, row) in enumerate(df_plot.iterrows()):
+    for i, (ts, row) in enumerate(df_full.iterrows()):
         if ts.date() != today_date:
             continue
         if i < LOOKBACK:
@@ -108,10 +121,11 @@ def render_chart_html(
     profiles: List[SessionProfile],
     symbol: str = "NIFTY",
     height: int = 650,
+    market_open: bool = False,
 ) -> str:
     """Generate full HTML string for Lightweight Charts."""
 
-    data     = build_chart_data(df, profiles)
+    data      = build_chart_data(df, profiles, market_open=market_open)
     DATA_JSON = json.dumps(data)
 
     last = profiles[-1] if profiles else None

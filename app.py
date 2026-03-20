@@ -229,7 +229,7 @@ def show_app():
     from chart_renderer import render_chart_html
     import streamlit.components.v1 as components
 
-    chart_html = render_chart_html(df, profiles, symbol=symbol)
+    chart_html = render_chart_html(df, profiles, symbol=symbol, market_open=market_open)
     components.html(chart_html, height=720, scrolling=False)
     st.divider()
 
