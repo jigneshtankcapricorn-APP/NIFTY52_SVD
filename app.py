@@ -135,12 +135,29 @@ def show_app():
     for sym, name in STOCKS.items():
         instrument_options[f"🏢 {name} ({sym})"] = sym
 
+    # Check if coming from scanner "View Chart" button
+    default_symbol = st.session_state.get("selected_symbol", "NIFTY")
+    # Find index of default symbol in options
+    keys_list = list(instrument_options.keys())
+    default_idx = 0
+    for i, key in enumerate(keys_list):
+        if instrument_options[key] == default_symbol:
+            default_idx = i
+            break
+
     # ─── Top Controls Bar ─────────────────────────────────────────────────────
     c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
 
     with c1:
-        selected_label = st.selectbox("Instrument", list(instrument_options.keys()), index=0, label_visibility="collapsed")
+        selected_label = st.selectbox(
+            "Instrument",
+            list(instrument_options.keys()),
+            index=default_idx,
+            label_visibility="collapsed"
+        )
         symbol = instrument_options[selected_label]
+        # Update session state when user changes symbol
+        st.session_state["selected_symbol"] = symbol
     with c2:
         timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
     with c3:
