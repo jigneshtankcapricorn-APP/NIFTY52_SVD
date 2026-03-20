@@ -146,7 +146,7 @@ def show_app():
             break
 
     # ─── Top Controls Bar ─────────────────────────────────────────────────────
-    c1, c2, c3, c4, c5, c6, c7 = st.columns([2, 1, 1.2, 0.8, 0.8, 1.2, 0.7])
+    c1, c2, c3, c4, c5 = st.columns([2, 1, 1.2, 1.5, 0.7])
 
     with c1:
         selected_label = st.selectbox(
@@ -156,7 +156,6 @@ def show_app():
             label_visibility="collapsed"
         )
         symbol = instrument_options[selected_label]
-        # Update session state when user changes symbol
         st.session_state["selected_symbol"] = symbol
     with c2:
         timeframe = st.selectbox("Timeframe", ["3m", "30m"], label_visibility="collapsed")
@@ -169,12 +168,8 @@ def show_app():
             st.markdown("<div style='padding:8px 0;color:#4a5568;font-size:12px;'>NSE Cash</div>", unsafe_allow_html=True)
             expiry_label = None
     with c4:
-        show_candles = st.checkbox("Candles", value=True)
-    with c5:
-        show_prev = st.checkbox("Prev Levels", value=True)
-    with c6:
         refresh = st.button("🔄 Refresh Data", width="stretch", type="primary")
-    with c7:
+    with c5:
         if st.button("🚪 Logout", width="stretch"):
             st.session_state["logged_in"] = False
             st.rerun()
@@ -236,7 +231,6 @@ def show_app():
 
     chart_html = render_chart_html(df, profiles, symbol=symbol)
     components.html(chart_html, height=720, scrolling=False)
-
     st.divider()
 
     # ─── Details Below Chart ──────────────────────────────────────────────────
