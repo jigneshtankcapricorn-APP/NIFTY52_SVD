@@ -169,26 +169,17 @@ def show_app():
     IST       = tz(pd.Timedelta(hours=5, minutes=30))
     now_ist   = datetime.now(IST)
     today_str = now_ist.strftime("%Y-%m-%d")
-    cache_key = f"data_{symbol}_{timeframe}_{expiry_label}_{today_str}"
+    now_mins  = now_ist.hour * 60 + now_ist.minute
+    market_open = 555 <= now_mins <= 930
 
-    def needs_refresh():
-        if cache_key not in st.session_state:
-            return True
-        if refresh:
-            return True
-        try:
-            cached_df  = st.session_state[cache_key]
-            last_date  = pd.to_datetime(cached_df.index[-1], utc=True).tz_convert("Asia/Kolkata").date()
-            today      = now_ist.date()
-            now_mins   = now_ist.hour * 60 + now_ist.minute
-            market_open = 555 <= now_mins <= 930
-            if market_open and last_date < today:
-                return True
-        except:
-            return True
-        return False
+    # Cache key includes 3-min window so data refreshes every 3 min during market
+    if market_open:
+        window = (now_ist.hour * 60 + now_ist.minute) // 3
+        cache_key = f"data_{symbol}_{timeframe}_{expiry_label}_{today_str}_{window}"
+    else:
+        cache_key = f"data_{symbol}_{timeframe}_{expiry_label}_{today_str}"
 
-    if needs_refresh():
+    if cache_key not in st.session_state or refresh:
         with st.spinner(f"📡 Fetching {symbol} {timeframe} data..."):
             try:
                 obj = login()
@@ -203,10 +194,9 @@ def show_app():
                     st.warning("⚠️ Session expired — click Refresh Data to re-login")
                 else:
                     st.error(f"❌ {err}")
-                # Show last cached data if available
                 old_keys = [k for k in st.session_state.keys() if k.startswith(f"data_{symbol}")]
                 if old_keys:
-                    st.info("📊 Showing last available data while error persists")
+                    st.info("📊 Showing last available data")
                     old_key = old_keys[-1]
                     df = st.session_state[old_key]
                     if f"profiles_{old_key}" in st.session_state:
