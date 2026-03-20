@@ -129,7 +129,7 @@ def fetch_daily_candles(
 
 # ─── Zone Config ──────────────────────────────────────────────────────────────
 ZONE_BODY_PCT = 0.005  # 0.5% body threshold for 30m candles
-MAX_ZONES     = 3      # Max sell + buy zones each
+MAX_ZONES     = 1      # Only nearest 1 sell + 1 buy zone
 
 
 def calculate_zones_from_3m(df_3m: pd.DataFrame, current_price: float) -> List[Zone]:
@@ -223,12 +223,7 @@ def calculate_zones_from_3m(df_3m: pd.DataFrame, current_price: float) -> List[Z
     buy_zones.sort(key=lambda z: z.price_high, reverse=True)
     buy_zones = _remove_overlapping(buy_zones, current_price)[:MAX_ZONES]
 
-    # Mark targets
-    if len(sell_zones) >= 2:
-        sell_zones[-1].zone_type = "SUPPLY_TARGET"
-    if len(buy_zones) >= 2:
-        buy_zones[-1].zone_type = "DEMAND_TARGET"
-
+    # With only 1 zone each — no target needed
     final = sell_zones + buy_zones
     print(f"✅ 30m Zones: {len(sell_zones)} SELL + {len(buy_zones)} BUY")
     for z in final:
