@@ -17,15 +17,17 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
     df_plot = df.copy()
     df_plot.index = pd.to_datetime(df_plot.index, utc=True).tz_convert("Asia/Kolkata")
 
-    # IST offset = +5:30 = 19800 seconds
-    # Lightweight Charts needs local timestamps for correct display
-    IST_OFFSET = 19800
+    def to_chart_ts(ts):
+        # Strip timezone, treat as naive IST time, convert to unix
+        # This makes chart display 09:15 instead of 03:45
+        naive = ts.replace(tzinfo=None)
+        return int(naive.timestamp())
 
     # ── Candles ───────────────────────────────────────────────────────────────
     candles = []
     for ts, row in df_plot.iterrows():
         candles.append({
-            "time":  int(ts.timestamp()) - int(ts.utcoffset().total_seconds()) + IST_OFFSET,
+            "time":  to_chart_ts(ts),
             "open":  round(float(row["open"]),  2),
             "high":  round(float(row["high"]),  2),
             "low":   round(float(row["low"]),   2),
@@ -36,7 +38,7 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
     volume = []
     for ts, row in df_plot.iterrows():
         volume.append({
-            "time":  int(ts.timestamp()) - int(ts.utcoffset().total_seconds()) + IST_OFFSET,
+            "time":  to_chart_ts(ts),
             "value": int(row["volume"]),
             "color": "#26a69a" if row["close"] >= row["open"] else "#ef5350",
         })
@@ -62,8 +64,8 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
 
         sessions.append({
             "date":    p.date,
-            "startTs": int(day_df.index[0].timestamp()) - int(day_df.index[0].utcoffset().total_seconds()) + IST_OFFSET,
-            "endTs":   int(day_df.index[-1].timestamp()) - int(day_df.index[-1].utcoffset().total_seconds()) + IST_OFFSET,
+            "startTs": to_chart_ts(day_df.index[0]),
+            "endTs":   to_chart_ts(day_df.index[-1]),
             "poc":     p.poc,
             "vah":     p.vah,
             "val":     p.val,
@@ -90,7 +92,7 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile]) -> dict:
         avg = sum(vol_values[i-LOOKBACK:i]) / LOOKBACK
         if avg > 0 and row["volume"] > avg * SURGE_MULTIPLIER:
             surges.append({
-                "time":       int(ts.timestamp()) - int(ts.utcoffset().total_seconds()) + IST_OFFSET,
+                "time":       to_chart_ts(ts),
                 "price":      round(float(row["close"]), 2),
                 "volume":     int(row["volume"]),
                 "avg":        round(avg, 0),
@@ -198,6 +200,10 @@ const chart = LightweightCharts.createChart(chartEl, {{
             const d = new Date(t * 1000);
             const h = String(d.getUTCHours()).padStart(2,'0');
             const m = String(d.getUTCMinutes()).padStart(2,'0');
+            const day = d.getUTCDate();
+            const mon = ['Jan','Feb','Mar','Apr','May','Jun',
+                         'Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()];
+            if (h === '09' && m === '15') return day + ' ' + mon;
             return h + ':' + m;
         }}
     }},
