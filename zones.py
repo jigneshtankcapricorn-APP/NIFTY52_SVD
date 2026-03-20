@@ -127,109 +127,123 @@ def fetch_daily_candles(
 def calculate_zones(df_daily: pd.DataFrame, current_price: float) -> List[Zone]:
     """
     Calculate Supply and Demand zones from daily candles.
-
-    Rules:
-    - Big candle body > 0.7% of price = zone creator
-    - Red big candle falling from area = SUPPLY zone
-    - Green big candle rising from area = DEMAND zone
-    - Zone = body of the base candle (open to close)
-    - Target zones = next supply/demand in direction
-    - Fresh zones = price hasn't re-entered since creation
-    - Show max 3 supply + 3 demand zones
+    Zone = candle BODY only (open to close) — tight and clean
     """
-    zones = []
+    raw_zones = []
 
-    for i in range(2, len(df_daily) - 1):
-        candle  = df_daily.iloc[i]
-        prev    = df_daily.iloc[i-1]
-        next_c  = df_daily.iloc[i+1]
+    for i in range(1, len(df_daily) - 1):
+        candle   = df_daily.iloc[i]
+        prev     = df_daily.iloc[i-1]
+        nxt      = df_daily.iloc[i+1]
 
-        body    = abs(candle["close"] - candle["open"])
-        price   = candle["close"]
+        body     = abs(candle["close"] - candle["open"])
+        price    = (candle["high"] + candle["low"]) / 2
         body_pct = body / price
 
+        # Must be a significant candle
         if body_pct < ZONE_BODY_PCT:
             continue
 
         is_bearish = candle["close"] < candle["open"]
         is_bullish = candle["close"] > candle["open"]
 
-        # Strength based on body size
+        # Strength
         strength = 1
-        if body_pct > 0.015:
-            strength = 3
-        elif body_pct > 0.010:
-            strength = 2
+        if body_pct > 0.015: strength = 3
+        elif body_pct > 0.010: strength = 2
 
         zone_date = str(df_daily.index[i].date())
 
-        # ── SUPPLY ZONE ───────────────────────────────────────────────────────
-        # Big bearish candle = supply zone at top of candle body
+        # ── SUPPLY ZONE — big bearish candle ─────────────────────────────────
         if is_bearish:
-            zone_high = max(candle["open"], candle["close"])
-            zone_low  = min(candle["open"], candle["close"])
+            # Zone = body of candle (open at top, close at bottom)
+            zone_high = round(candle["open"],  2)
+            zone_low  = round(candle["close"], 2)
 
-            # Check if price has re-entered zone (not fresh)
-            future_prices = df_daily.iloc[i+1:]["high"]
-            fresh = not any(p >= zone_low for p in future_prices)
+            # Check freshness
+            future_df = df_daily.iloc[i+1:]
+            fresh     = not any(future_df["high"] >= zone_low * 0.999)
 
-            zones.append(Zone(
-                zone_type  = "SUPPLY",
-                price_high = round(zone_high, 2),
-                price_low  = round(zone_low,  2),
-                date       = zone_date,
-                fresh      = fresh,
-                strength   = strength,
-            ))
+            # Only include if zone is above current price
+            if zone_low > current_price * 0.990:
+                raw_zones.append(Zone(
+                    zone_type  = "SUPPLY",
+                    price_high = zone_high,
+                    price_low  = zone_low,
+                    date       = zone_date,
+                    fresh      = fresh,
+                    strength   = strength,
+                ))
 
-        # ── DEMAND ZONE ───────────────────────────────────────────────────────
-        # Big bullish candle = demand zone at bottom of candle body
+        # ── DEMAND ZONE — big bullish candle ─────────────────────────────────
         if is_bullish:
-            zone_high = max(candle["open"], candle["close"])
-            zone_low  = min(candle["open"], candle["close"])
+            # Zone = body of candle (close at top, open at bottom)
+            zone_high = round(candle["close"], 2)
+            zone_low  = round(candle["open"],  2)
 
-            # Check if fresh
-            future_prices = df_daily.iloc[i+1:]["low"]
-            fresh = not any(p <= zone_high for p in future_prices)
+            # Check freshness
+            future_df = df_daily.iloc[i+1:]
+            fresh     = not any(future_df["low"] <= zone_high * 1.001)
 
-            zones.append(Zone(
-                zone_type  = "DEMAND",
-                price_high = round(zone_high, 2),
-                price_low  = round(zone_low,  2),
-                date       = zone_date,
-                fresh      = fresh,
-                strength   = strength,
-            ))
+            # Only include if zone is below current price
+            if zone_high < current_price * 1.010:
+                raw_zones.append(Zone(
+                    zone_type  = "DEMAND",
+                    price_high = zone_high,
+                    price_low  = zone_low,
+                    date       = zone_date,
+                    fresh      = fresh,
+                    strength   = strength,
+                ))
 
-    # ── Filter relevant zones ─────────────────────────────────────────────────
-    # Supply zones ABOVE current price
-    supply_zones = [z for z in zones
-                    if z.zone_type == "SUPPLY"
-                    and z.price_low > current_price * 0.995]
-    supply_zones.sort(key=lambda z: z.price_low)  # nearest first
-    supply_zones = supply_zones[:3]  # max 3
+    # ── Filter Supply zones — above current price, nearest 3 ─────────────────
+    supply = [z for z in raw_zones
+              if z.zone_type == "SUPPLY"
+              and z.price_low > current_price]
+    supply.sort(key=lambda z: z.price_low)
 
-    # Demand zones BELOW current price
-    demand_zones = [z for z in zones
-                    if z.zone_type == "DEMAND"
-                    and z.price_high < current_price * 1.005]
-    demand_zones.sort(key=lambda z: z.price_high, reverse=True)  # nearest first
-    demand_zones = demand_zones[:3]  # max 3
+    # Remove overlapping zones
+    supply = _remove_overlapping(supply, current_price)[:3]
 
-    # ── Add Target zones ──────────────────────────────────────────────────────
-    # Supply target = highest supply zone (furthest above)
-    if len(supply_zones) > 1:
-        target_supply         = supply_zones[-1]  # furthest supply
-        target_supply.zone_type = "SUPPLY_TARGET"
+    # ── Filter Demand zones — below current price, nearest 3 ─────────────────
+    demand = [z for z in raw_zones
+              if z.zone_type == "DEMAND"
+              and z.price_high < current_price]
+    demand.sort(key=lambda z: z.price_high, reverse=True)
 
-    # Demand target = lowest demand zone (furthest below)
-    if len(demand_zones) > 1:
-        target_demand         = demand_zones[-1]  # furthest demand
-        target_demand.zone_type = "DEMAND_TARGET"
+    # Remove overlapping zones
+    demand = _remove_overlapping(demand, current_price)[:3]
 
-    final_zones = supply_zones + demand_zones
-    print(f"✅ Found {len(supply_zones)} supply + {len(demand_zones)} demand zones")
-    return final_zones
+    # ── Mark target zones (furthest ones) ─────────────────────────────────────
+    if len(supply) >= 2:
+        supply[-1].zone_type = "SUPPLY_TARGET"
+    if len(demand) >= 2:
+        demand[-1].zone_type = "DEMAND_TARGET"
+
+    final = supply + demand
+    print(f"✅ Zones: {len(supply)} supply + {len(demand)} demand")
+    for z in final:
+        print(f"   {z.zone_type}: {z.price_low:.0f} - {z.price_high:.0f} | Fresh: {z.fresh}")
+
+    return final
+
+
+def _remove_overlapping(zones: List[Zone], current_price: float) -> List[Zone]:
+    """Remove zones that overlap or are too close together."""
+    if not zones:
+        return []
+
+    MIN_GAP = current_price * 0.003  # 0.3% minimum gap between zones
+    result  = [zones[0]]
+
+    for z in zones[1:]:
+        last = result[-1]
+        # Check if zones overlap or too close
+        gap = abs(z.price_low - last.price_high)
+        if gap >= MIN_GAP:
+            result.append(z)
+
+    return result
 
 
 def zones_to_dict(zones: List[Zone]) -> list:
