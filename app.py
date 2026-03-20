@@ -256,9 +256,14 @@ def show_app():
     # ─── Auto refresh every 3 min during market hours ─────────────────────────
     now_mins = now_ist.hour * 60 + now_ist.minute
     if 555 <= now_mins <= 930:
-        import time
-        time.sleep(180)
-        st.rerun()
+        # Use fragment auto-refresh instead of sleep
+        st.markdown("""
+        <script>
+        setTimeout(function() {
+            window.parent.location.reload();
+        }, 180000);
+        </script>
+        """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
