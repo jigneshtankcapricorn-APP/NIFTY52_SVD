@@ -15,9 +15,16 @@ from SmartApi import SmartConnect
 
 
 # ─── Zone Config ──────────────────────────────────────────────────────────────
-ZONE_BODY_PCT    = 0.004   # Reduced to 0.4% to catch more zones
-ZONE_LOOKBACK    = 120     # Days of daily candles to fetch
-ZONE_EXTEND_DAYS = 30      # How many days to extend zone to the right
+ZONE_BODY_PCT        = 0.004   # 0.4% candle body minimum
+ZONE_LOOKBACK_INDEX  = 45      # 1.5 months for indices (spot)
+ZONE_LOOKBACK_STOCK  = 120     # 4 months for stocks
+ZONE_EXTEND_DAYS     = 30
+
+# ─── Spot index tokens for zone daily data ────────────────────────────────────
+INDEX_SPOT_TOKENS = {
+    "NIFTY":     "99926000",
+    "BANKNIFTY": "99926009",
+}
 
 
 @dataclass
@@ -76,26 +83,32 @@ class Zone:
 def fetch_daily_candles(
     obj: SmartConnect,
     symbol: str,
-    days: int = ZONE_LOOKBACK,
 ) -> pd.DataFrame:
-    """Fetch daily candles for zone calculation."""
-    from fetcher import get_futures_token, get_stock_token, is_index, INTERVALS
+    """
+    Fetch daily candles for zone calculation.
+    Indices → spot token, 1.5 months
+    Stocks  → NSE cash token, 4 months
+    """
+    from fetcher import get_stock_token, is_index
 
-    IST       = timezone(timedelta(hours=5, minutes=30))
-    to_date   = datetime.now(IST)
-    from_date = to_date - timedelta(days=days)
-
-    from_str = from_date.strftime("%Y-%m-%d %H:%M")
-    to_str   = to_date.strftime("%Y-%m-%d %H:%M")
+    IST = timezone(timedelta(hours=5, minutes=30))
+    to_date = datetime.now(IST)
 
     if is_index(symbol):
-        info     = get_futures_token(symbol)
-        token    = info["token"]
-        exchange = "NFO"
+        # Use spot index token for continuous daily data
+        token    = INDEX_SPOT_TOKENS[symbol]
+        exchange = "NSE"
+        days     = ZONE_LOOKBACK_INDEX
     else:
+        # Use NSE cash stock token
         info     = get_stock_token(symbol)
         token    = info["token"]
         exchange = "NSE"
+        days     = ZONE_LOOKBACK_STOCK
+
+    from_date = to_date - timedelta(days=days)
+    from_str  = from_date.strftime("%Y-%m-%d %H:%M")
+    to_str    = to_date.strftime("%Y-%m-%d %H:%M")
 
     params = {
         "exchange":    exchange,
@@ -105,11 +118,11 @@ def fetch_daily_candles(
         "todate":      to_str,
     }
 
-    print(f"📡 Fetching {symbol} daily candles for zone calculation...")
+    print(f"📡 Fetching {symbol} daily candles (spot/cash, {days} days)...")
     response = obj.getCandleData(params)
 
     if response["status"] == False:
-        raise RuntimeError(f"❌ Daily data fetch failed: {response['message']}")
+        raise RuntimeError(f"❌ Daily fetch failed: {response['message']}")
 
     raw = response["data"]
     if not raw:
@@ -118,9 +131,10 @@ def fetch_daily_candles(
     df = pd.DataFrame(raw, columns=["datetime","open","high","low","close","volume"])
     df["datetime"] = pd.to_datetime(df["datetime"])
     df.set_index("datetime", inplace=True)
+    df = df[df.index.dayofweek < 5]
     df = df.sort_index()
 
-    print(f"✅ Got {len(df)} daily candles for zone calculation")
+    print(f"✅ Got {len(df)} daily candles | {df.index[0].date()} → {df.index[-1].date()}")
     return df
 
 
