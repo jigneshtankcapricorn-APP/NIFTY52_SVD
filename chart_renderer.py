@@ -85,23 +85,25 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile], market_op
 
     # ── VWAP (per session, resets daily) ─────────────────────────────────────
     vwap_data = []
-    df_plot["date"] = df_plot.index.date
+    dates_in_plot = sorted(set(df_plot.index.date))
 
-    for date, day_df in df_plot.groupby("date"):
-        # VWAP = cumulative(typical_price × volume) / cumulative(volume)
-        typical   = (day_df["high"] + day_df["low"] + day_df["close"]) / 3
-        cum_vol   = day_df["volume"].cumsum()
-        cum_tp_vol= (typical * day_df["volume"]).cumsum()
-        vwap      = cum_tp_vol / cum_vol.replace(0, 1)
+    for date in dates_in_plot:
+        day_mask = [d == date for d in df_plot.index.date]
+        day_df   = df_plot[day_mask]
+        if day_df.empty:
+            continue
+
+        typical    = (day_df["high"] + day_df["low"] + day_df["close"]) / 3
+        cum_vol    = day_df["volume"].cumsum()
+        cum_tp_vol = (typical * day_df["volume"]).cumsum()
+        vwap       = cum_tp_vol / cum_vol.replace(0, 1)
 
         for ts, val in vwap.items():
-            if not pd.isna(val):
+            if not pd.isna(val) and val > 0:
                 vwap_data.append({
                     "time":  to_chart_ts(ts),
                     "value": round(float(val), 2),
                 })
-
-    df_plot.drop(columns=["date"], inplace=True)
     # Always use full df for surge detection regardless of view filter
     df_full = df.copy()
     df_full.index = pd.to_datetime(df_full.index, utc=True).tz_convert("Asia/Kolkata")
