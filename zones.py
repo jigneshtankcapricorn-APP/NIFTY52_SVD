@@ -15,7 +15,7 @@ from SmartApi import SmartConnect
 
 
 # ─── Zone Config ──────────────────────────────────────────────────────────────
-ZONE_BODY_PCT    = 0.007   # Candle body must be > 0.7% of price to create zone
+ZONE_BODY_PCT    = 0.004   # Reduced to 0.4% to catch more zones
 ZONE_LOOKBACK    = 120     # Days of daily candles to fetch
 ZONE_EXTEND_DAYS = 30      # How many days to extend zone to the right
 
@@ -186,7 +186,7 @@ def calculate_zones(df_daily: pd.DataFrame, current_price: float) -> List[Zone]:
             fresh     = not any(future_df["low"] <= zone_high * 1.001)
 
             # Only include if zone is below current price
-            if zone_high < current_price * 1.010:
+            if zone_high < current_price * 1.020:
                 raw_zones.append(Zone(
                     zone_type  = "DEMAND",
                     price_high = zone_high,

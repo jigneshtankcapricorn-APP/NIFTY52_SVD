@@ -239,6 +239,7 @@ def show_app():
             curr_price = float(st.session_state[cache_key]["close"].iloc[-1])
             zone_list  = calculate_zones(df_daily, curr_price)
             st.session_state[zone_key] = zones_to_dict(zone_list)
+            print(f"✅ Zones cached: {len(st.session_state[zone_key])}")
         except Exception as e:
             print(f"⚠️ Zone fetch failed: {e}")
             st.session_state[zone_key] = []
