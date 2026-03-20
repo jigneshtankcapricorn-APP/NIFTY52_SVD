@@ -127,7 +127,113 @@ def fetch_daily_candles(
     return df
 
 
-def calculate_zones(df_daily: pd.DataFrame, current_price: float) -> List[Zone]:
+# ─── Zone Config ──────────────────────────────────────────────────────────────
+ZONE_BODY_PCT = 0.005  # 0.5% body threshold for 30m candles
+MAX_ZONES     = 3      # Max sell + buy zones each
+
+
+def calculate_zones_from_3m(df_3m: pd.DataFrame, current_price: float) -> List[Zone]:
+    """
+    Calculate SELL/BUY zones from existing 3m data resampled to 30m.
+    No extra API call needed!
+    """
+    # ── Resample 3m → 30m ─────────────────────────────────────────────────────
+    df = df_3m.copy()
+    df.index = pd.to_datetime(df.index, utc=True).tz_convert("Asia/Kolkata")
+
+    df_30m = df.resample("30min").agg({
+        "open":   "first",
+        "high":   "max",
+        "low":    "min",
+        "close":  "last",
+        "volume": "sum",
+    }).dropna()
+
+    # Market hours only
+    df_30m = df_30m.between_time("09:15", "15:30")
+    df_30m = df_30m[df_30m.index.dayofweek < 5]
+
+    raw_zones = []
+
+    for i in range(1, len(df_30m)):
+        candle   = df_30m.iloc[i]
+        body     = abs(candle["close"] - candle["open"])
+        body_pct = body / candle["close"]
+
+        if body_pct < ZONE_BODY_PCT:
+            continue
+
+        is_bearish = candle["close"] < candle["open"]
+        is_bullish = candle["close"] > candle["open"]
+
+        # Strength
+        strength = 1
+        if body_pct > 0.012: strength = 3
+        elif body_pct > 0.008: strength = 2
+
+        zone_date = str(df_30m.index[i].date())
+        zone_time = df_30m.index[i].strftime("%H:%M")
+
+        # ── SELL ZONE — big bearish 30m candle ───────────────────────────────
+        if is_bearish:
+            zone_high = round(candle["open"],  2)
+            zone_low  = round(candle["close"], 2)
+
+            # Check freshness — did price re-enter after?
+            future = df_30m.iloc[i+1:]
+            fresh  = not any(future["high"] >= zone_low * 0.999)
+
+            raw_zones.append(Zone(
+                zone_type  = "SUPPLY",
+                price_high = zone_high,
+                price_low  = zone_low,
+                date       = f"{zone_date} {zone_time}",
+                fresh      = fresh,
+                strength   = strength,
+            ))
+
+        # ── BUY ZONE — big bullish 30m candle ────────────────────────────────
+        if is_bullish:
+            zone_high = round(candle["close"], 2)
+            zone_low  = round(candle["open"],  2)
+
+            # Check freshness
+            future = df_30m.iloc[i+1:]
+            fresh  = not any(future["low"] <= zone_high * 1.001)
+
+            raw_zones.append(Zone(
+                zone_type  = "DEMAND",
+                price_high = zone_high,
+                price_low  = zone_low,
+                date       = f"{zone_date} {zone_time}",
+                fresh      = fresh,
+                strength   = strength,
+            ))
+
+    # ── Filter: sell above price, buy below price ─────────────────────────────
+    sell_zones = [z for z in raw_zones
+                  if z.zone_type == "SUPPLY"
+                  and z.price_low > current_price * 0.998]
+    sell_zones.sort(key=lambda z: z.price_low)
+    sell_zones = _remove_overlapping(sell_zones, current_price)[:MAX_ZONES]
+
+    buy_zones = [z for z in raw_zones
+                 if z.zone_type == "DEMAND"
+                 and z.price_high < current_price * 1.002]
+    buy_zones.sort(key=lambda z: z.price_high, reverse=True)
+    buy_zones = _remove_overlapping(buy_zones, current_price)[:MAX_ZONES]
+
+    # Mark targets
+    if len(sell_zones) >= 2:
+        sell_zones[-1].zone_type = "SUPPLY_TARGET"
+    if len(buy_zones) >= 2:
+        buy_zones[-1].zone_type = "DEMAND_TARGET"
+
+    final = sell_zones + buy_zones
+    print(f"✅ 30m Zones: {len(sell_zones)} SELL + {len(buy_zones)} BUY")
+    for z in final:
+        print(f"   {z.label}: {z.price_low:.0f}-{z.price_high:.0f} | {z.date}")
+    return final
     """
     Calculate Supply and Demand zones from daily candles.
     Zone = candle BODY only (open to close) — tight and clean

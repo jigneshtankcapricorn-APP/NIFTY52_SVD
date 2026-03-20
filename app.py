@@ -229,19 +229,17 @@ def show_app():
     from chart_renderer import render_chart_html
     import streamlit.components.v1 as components
 
-    # ─── Fetch Zones (daily candles) ──────────────────────────────────────────
+    # ─── Calculate Zones from existing 3m data (no extra API call!) ───────────
     zone_key = f"zones_{symbol}_{today_str}"
     if zone_key not in st.session_state or refresh:
         try:
-            from zones import fetch_daily_candles, calculate_zones, zones_to_dict
-            obj_z      = login()
-            df_daily   = fetch_daily_candles(obj_z, symbol)
-            curr_price = float(st.session_state[cache_key]["close"].iloc[-1])
-            zone_list  = calculate_zones(df_daily, curr_price)
+            from zones import calculate_zones_from_3m, zones_to_dict
+            curr_price = float(df["close"].iloc[-1])
+            zone_list  = calculate_zones_from_3m(df, curr_price)
             st.session_state[zone_key] = zones_to_dict(zone_list)
             print(f"✅ Zones cached: {len(st.session_state[zone_key])}")
         except Exception as e:
-            print(f"⚠️ Zone fetch failed: {e}")
+            print(f"⚠️ Zone calc failed: {e}")
             st.session_state[zone_key] = []
 
     zones = st.session_state.get(zone_key, [])
