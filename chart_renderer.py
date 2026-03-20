@@ -83,7 +83,25 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile], market_op
             "bars":    bars,
         })
 
-    # ── Volume Surge Detection (today only, 2.5x average) ────────────────────
+    # ── VWAP (per session, resets daily) ─────────────────────────────────────
+    vwap_data = []
+    df_plot["date"] = df_plot.index.date
+
+    for date, day_df in df_plot.groupby("date"):
+        # VWAP = cumulative(typical_price × volume) / cumulative(volume)
+        typical   = (day_df["high"] + day_df["low"] + day_df["close"]) / 3
+        cum_vol   = day_df["volume"].cumsum()
+        cum_tp_vol= (typical * day_df["volume"]).cumsum()
+        vwap      = cum_tp_vol / cum_vol.replace(0, 1)
+
+        for ts, val in vwap.items():
+            if not pd.isna(val):
+                vwap_data.append({
+                    "time":  to_chart_ts(ts),
+                    "value": round(float(val), 2),
+                })
+
+    df_plot.drop(columns=["date"], inplace=True)
     # Always use full df for surge detection regardless of view filter
     df_full = df.copy()
     df_full.index = pd.to_datetime(df_full.index, utc=True).tz_convert("Asia/Kolkata")
@@ -110,7 +128,7 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile], market_op
                 "timeStr":    ts.strftime("%H:%M"),
             })
 
-    return {"candles": candles, "volume": volume, "sessions": sessions, "surges": surges}
+    return {"candles": candles, "volume": volume, "sessions": sessions, "surges": surges, "vwap": vwap_data}
 
 
 def render_chart_html(
@@ -191,6 +209,7 @@ body {{ background:#131722; font-family:-apple-system,BlinkMacSystemFont,'Segoe 
         <div class="lvl" style="color:#ef6c00">P.High <span id="lv-ph">—</span></div>
         <div class="lvl" style="color:#ef6c00">P.Low <span id="lv-pl">—</span></div>
         <div class="lvl" style="color:#00c853">W.POC <span id="lv-wpoc">—</span></div>
+        <div class="lvl" style="color:#f9a825">VWAP <span id="lv-vwap">—</span></div>
         <div id="timer"></div>
     </div>
 </div>
@@ -249,6 +268,20 @@ const volSeries = volChart.addHistogramSeries({{
 }});
 volSeries.setData(RAW.volume);
 
+// ── VWAP Line ─────────────────────────────────────────────────────────────────
+const vwapSeries = chart.addLineSeries({{
+    color:                  '#f9a825',
+    lineWidth:              2,
+    lineStyle:              LightweightCharts.LineStyle.Solid,
+    priceLineVisible:       false,
+    lastValueVisible:       true,
+    crosshairMarkerVisible: false,
+    title:                  'VWAP',
+}});
+if (RAW.vwap && RAW.vwap.length) {{
+    vwapSeries.setData(RAW.vwap);
+}}
+
 chart.timeScale().subscribeVisibleLogicalRangeChange(r => {{ if(r) volChart.timeScale().setVisibleLogicalRange(r); }});
 volChart.timeScale().subscribeVisibleLogicalRangeChange(r => {{ if(r) chart.timeScale().setVisibleLogicalRange(r); }});
 
@@ -269,6 +302,11 @@ document.getElementById('lv-val').textContent  = last.val;
 document.getElementById('lv-ph').textContent   = prev ? prev.high : '—';
 document.getElementById('lv-pl').textContent   = prev ? prev.low  : '—';
 document.getElementById('lv-wpoc').textContent = weeklyPoc;
+// VWAP latest value
+if (RAW.vwap && RAW.vwap.length) {{
+    const lastVwap = RAW.vwap[RAW.vwap.length - 1].value;
+    document.getElementById('lv-vwap').textContent = lastVwap.toFixed(1);
+}}
 const badge = document.getElementById('bias-badge');
 const b = last.bias;
 badge.className = 'badge '+(b==='BULLISH'?'bull':b==='BEARISH'?'bear':'side');
