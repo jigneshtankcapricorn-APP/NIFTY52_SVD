@@ -92,6 +92,7 @@ def get_totp(totp_key: str) -> str:
 def login() -> SmartConnect:
     """
     Login to Angel One SmartAPI using Streamlit secrets.
+    Retries once if session fails.
     Returns authenticated SmartConnect object.
     """
     try:
@@ -102,15 +103,24 @@ def login() -> SmartConnect:
     except Exception as e:
         raise ValueError(f"❌ Could not read secrets: {e}")
 
-    totp = get_totp(totp_key)
-    obj  = SmartConnect(api_key=api_key)
-    data = obj.generateSession(client_id, password, totp)
+    import time
+    for attempt in range(3):  # retry up to 3 times
+        try:
+            totp = get_totp(totp_key)
+            obj  = SmartConnect(api_key=api_key)
+            data = obj.generateSession(client_id, password, totp)
 
-    if data["status"] == False:
-        raise ConnectionError(f"❌ Login failed: {data['message']}")
+            if data["status"] == False:
+                raise ConnectionError(f"❌ Login failed: {data['message']}")
 
-    print(f"✅ Login successful!")
-    return obj
+            print(f"✅ Login successful!")
+            return obj
+        except Exception as e:
+            if attempt < 2:
+                print(f"⚠️ Login attempt {attempt+1} failed: {e} — retrying in 2s...")
+                time.sleep(2)
+            else:
+                raise ConnectionError(f"❌ Login failed after 3 attempts: {e}")
 
 
 def get_available_expiries(symbol: str = "NIFTY") -> list:

@@ -165,17 +165,23 @@ def show_app():
     st.divider()
 
     # ─── Load Data ────────────────────────────────────────────────────────────
-    cache_key = f"data_{symbol}_{timeframe}_{expiry_label}"
+    # Include today's date in cache key so data refreshes daily automatically
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    cache_key = f"data_{symbol}_{timeframe}_{expiry_label}_{today_str}"
 
     if cache_key not in st.session_state or refresh:
-        with st.spinner(f"📡 Fetching {symbol} {expiry_label} {timeframe} data..."):
+        with st.spinner(f"📡 Fetching {symbol} {timeframe} data..."):
             try:
                 obj = login()
                 df  = fetch_candles(obj, symbol=symbol, interval=timeframe, days=7, expiry_label=expiry_label)
                 st.session_state[cache_key] = df
                 st.session_state[f"profiles_{cache_key}"] = calculate_all_sessions(df, symbol=symbol)
             except Exception as e:
-                st.error(f"❌ {e}")
+                # Clear old cache on error and retry once
+                for key in list(st.session_state.keys()):
+                    if key.startswith("data_"):
+                        del st.session_state[key]
+                st.error(f"❌ {e} — Please click Refresh Data")
                 st.stop()
 
     df       = st.session_state[cache_key]
