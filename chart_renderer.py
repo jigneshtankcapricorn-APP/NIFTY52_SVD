@@ -22,14 +22,11 @@ def build_chart_data(df: pd.DataFrame, profiles: List[SessionProfile], market_op
         return int(naive.timestamp())
 
     # ── Smart date filter ─────────────────────────────────────────────────────
-    # During market hours → show today + yesterday only (no zoom needed)
-    # After market close  → show full week
     if market_open and len(profiles) >= 2:
-        # Get last 2 trading days
-        dates = sorted(set(df_plot.index.date))
-        show_dates = dates[-2:]  # today + yesterday
-        df_plot = df_plot[df_plot.index.date.map(lambda d: d in show_dates)]
-        profiles_to_show = profiles[-2:]  # last 2 sessions
+        dates      = sorted(set(df_plot.index.date))
+        show_dates = set(dates[-2:])
+        df_plot    = df_plot[[d in show_dates for d in df_plot.index.date]]
+        profiles_to_show = profiles[-2:]
     else:
         profiles_to_show = profiles
 
