@@ -196,11 +196,24 @@ def show_app():
                 st.session_state[cache_key] = df
                 st.session_state[f"profiles_{cache_key}"] = calculate_all_sessions(df, symbol=symbol)
             except Exception as e:
-                for key in list(st.session_state.keys()):
-                    if key.startswith("data_"):
-                        del st.session_state[key]
-                st.error(f"❌ {e} — Please click Refresh Data")
-                st.stop()
+                err = str(e)
+                if "Too many" in err or "AB1019" in err:
+                    st.warning("⚠️ Angel API rate limit — please wait 1 minute and click Refresh Data")
+                elif "session" in err.lower():
+                    st.warning("⚠️ Session expired — click Refresh Data to re-login")
+                else:
+                    st.error(f"❌ {err}")
+                # Show last cached data if available
+                old_keys = [k for k in st.session_state.keys() if k.startswith(f"data_{symbol}")]
+                if old_keys:
+                    st.info("📊 Showing last available data while error persists")
+                    old_key = old_keys[-1]
+                    df = st.session_state[old_key]
+                    if f"profiles_{old_key}" in st.session_state:
+                        st.session_state[f"profiles_{cache_key}"] = st.session_state[f"profiles_{old_key}"]
+                    st.session_state[cache_key] = df
+                else:
+                    st.stop()
 
     df       = st.session_state[cache_key]
     prof_key = f"profiles_{cache_key}"

@@ -300,7 +300,27 @@ def fetch_candles(
     response = obj.getCandleData(params)
 
     if response["status"] == False:
-        raise RuntimeError(f"❌ Data fetch failed: {response['message']}")
+        error_msg = response.get("message", "Unknown error")
+        error_code = response.get("errorcode", "")
+
+        # Rate limit error — wait and retry
+        if "Too many" in error_msg or error_code == "AB1019":
+            print(f"⚠️ Rate limit hit — waiting 5 seconds...")
+            import time
+            time.sleep(5)
+            response = obj.getCandleData(params)
+            if response["status"] == False:
+                raise RuntimeError(f"❌ Rate limit — please wait 1 min and retry: {error_msg}")
+
+        # Session expired — re-login and retry
+        elif "session" in error_msg.lower() or "token" in error_msg.lower():
+            print(f"⚠️ Session expired — re-logging in...")
+            obj2 = login()
+            response = obj2.getCandleData(params)
+            if response["status"] == False:
+                raise RuntimeError(f"❌ Session error: {error_msg}")
+        else:
+            raise RuntimeError(f"❌ Data fetch failed: {error_msg}")
 
     raw = response["data"]
     if not raw:
