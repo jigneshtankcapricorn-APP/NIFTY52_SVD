@@ -318,9 +318,20 @@ canvas.height = chartEl.offsetHeight;
 chartEl.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
-// ── Draw Supply/Demand Zones ──────────────────────────────────────────────────
+// ── Draw Supply/Demand Zones (today session only) ─────────────────────────────
 function drawZones() {{
     if (!RAW.zones || !RAW.zones.length) return;
+    if (!RAW.sessions || !RAW.sessions.length) return;
+
+    // Get today's session time range
+    const today   = RAW.sessions[RAW.sessions.length - 1];
+    const ts      = chart.timeScale();
+    const startX  = ts.timeToCoordinate(today.startTs);
+    const endX    = ts.timeToCoordinate(today.endTs);
+    if (startX === null || endX === null) return;
+
+    // Add small padding on right
+    const drawEndX = endX + 40;
 
     RAW.zones.forEach(zone => {{
         const y1 = candleSeries.priceToCoordinate(zone.high);
@@ -329,33 +340,31 @@ function drawZones() {{
 
         const yTop  = Math.min(y1, y2);
         const yBot  = Math.max(y1, y2);
-        const zoneH = Math.max(yBot - yTop, 4);
-        const W     = canvas.width;
+        const zoneH = Math.max(yBot - yTop, 6);
 
-        // Zone rectangle — full width
+        // Zone rectangle — today session width only
         ctx.save();
         ctx.fillStyle   = zone.colorFill;
-        ctx.strokeStyle = zone.colorBorder;
-        ctx.lineWidth   = 1;
-        ctx.fillRect(0, yTop, W, zoneH);
-        // Top border line
-        ctx.beginPath();
-        ctx.moveTo(0,  yTop);
-        ctx.lineTo(W,  yTop);
-        ctx.stroke();
-        // Bottom border line
-        ctx.beginPath();
-        ctx.moveTo(0,  yBot);
-        ctx.lineTo(W,  yBot);
-        ctx.stroke();
-        ctx.restore();
+        ctx.fillRect(startX, yTop, drawEndX - startX, zoneH);
 
-        // Zone label — right side
-        ctx.save();
+        // Border lines
+        ctx.strokeStyle = zone.colorBorder;
+        ctx.lineWidth   = 1.5;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(startX, yTop);
+        ctx.lineTo(drawEndX, yTop);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(startX, yBot);
+        ctx.lineTo(drawEndX, yBot);
+        ctx.stroke();
+
+        // Label inside zone on right
         ctx.font      = 'bold 10px sans-serif';
         ctx.fillStyle = zone.labelColor;
         ctx.textAlign = 'right';
-        ctx.fillText(zone.label, W - 75, yTop + zoneH / 2 + 4);
+        ctx.fillText(zone.label, drawEndX - 4, yTop + zoneH / 2 + 4);
         ctx.restore();
     }});
 }}

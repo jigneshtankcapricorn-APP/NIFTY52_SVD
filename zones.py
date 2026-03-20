@@ -15,7 +15,7 @@ from SmartApi import SmartConnect
 
 
 # ─── Zone Config ──────────────────────────────────────────────────────────────
-ZONE_BODY_PCT        = 0.004   # 0.4% candle body minimum
+ZONE_BODY_PCT        = 0.003   # 0.3% candle body minimum
 ZONE_LOOKBACK_INDEX  = 45      # 1.5 months for indices (spot)
 ZONE_LOOKBACK_STOCK  = 120     # 4 months for stocks
 ZONE_EXTEND_DAYS     = 30
@@ -39,39 +39,28 @@ class Zone:
 
     @property
     def color_fill(self) -> str:
-        if self.zone_type == "SUPPLY":
-            return "rgba(239,83,80,0.20)"      # pink
-        elif self.zone_type == "DEMAND":
-            return "rgba(38,166,154,0.20)"     # teal
-        elif self.zone_type == "SUPPLY_TARGET":
-            return "rgba(239,83,80,0.10)"      # light pink
+        if self.zone_type in ["SUPPLY", "SUPPLY_TARGET"]:
+            return "rgba(239,83,80,0.15)"      # red
         else:
-            return "rgba(38,166,154,0.10)"     # light teal
+            return "rgba(38,166,154,0.15)"     # green
 
     @property
     def color_border(self) -> str:
-        if self.zone_type == "SUPPLY":
-            return "rgba(239,83,80,0.80)"
-        elif self.zone_type == "DEMAND":
-            return "rgba(38,166,154,0.80)"
-        elif self.zone_type == "SUPPLY_TARGET":
-            return "rgba(239,83,80,0.40)"
+        if self.zone_type in ["SUPPLY", "SUPPLY_TARGET"]:
+            return "rgba(239,83,80,0.70)"
         else:
-            return "rgba(38,166,154,0.40)"
+            return "rgba(38,166,154,0.70)"
 
     @property
     def label(self) -> str:
-        labels = {
-            "SUPPLY":         "D  Supply Zone",
-            "DEMAND":         "D  Demand Zone",
-            "SUPPLY_TARGET":  "D  Supply Target Zone",
-            "DEMAND_TARGET":  "D  Demand Target Zone",
-        }
-        return labels.get(self.zone_type, self.zone_type)
+        if self.zone_type in ["SUPPLY", "SUPPLY_TARGET"]:
+            return "SELL ZONE"
+        else:
+            return "BUY ZONE"
 
     @property
     def label_color(self) -> str:
-        if "SUPPLY" in self.zone_type:
+        if self.zone_type in ["SUPPLY", "SUPPLY_TARGET"]:
             return "#ef5350"
         return "#26a69a"
 
