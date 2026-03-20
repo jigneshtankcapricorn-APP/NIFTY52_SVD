@@ -256,14 +256,11 @@ def show_app():
     # ─── Auto refresh every 3 min during market hours ─────────────────────────
     now_mins = now_ist.hour * 60 + now_ist.minute
     if 555 <= now_mins <= 930:
-        # Use fragment auto-refresh instead of sleep
-        st.markdown("""
-        <script>
-        setTimeout(function() {
-            window.parent.location.reload();
-        }, 180000);
-        </script>
-        """, unsafe_allow_html=True)
+        try:
+            from streamlit_autorefresh import st_autorefresh
+            st_autorefresh(interval=180000, key="autorefresh")
+        except ImportError:
+            st.caption("⚠️ Auto refresh: install streamlit-autorefresh in requirements.txt")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

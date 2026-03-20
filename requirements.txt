@@ -9,3 +9,4 @@ websocket-client
 logzero
 toml
 pillow>=10.0.0
+streamlit-autorefresh
