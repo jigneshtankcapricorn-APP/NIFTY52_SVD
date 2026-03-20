@@ -229,7 +229,29 @@ def show_app():
     from chart_renderer import render_chart_html
     import streamlit.components.v1 as components
 
-    chart_html = render_chart_html(df, profiles, symbol=symbol, market_open=market_open)
+    # ─── Fetch Zones (daily candles) ──────────────────────────────────────────
+    zone_key = f"zones_{symbol}_{today_str}"
+    if zone_key not in st.session_state or refresh:
+        try:
+            from zones import fetch_daily_candles, calculate_zones, zones_to_dict
+            obj_z      = login()
+            df_daily   = fetch_daily_candles(obj_z, symbol)
+            curr_price = float(st.session_state[cache_key]["close"].iloc[-1])
+            zone_list  = calculate_zones(df_daily, curr_price)
+            st.session_state[zone_key] = zones_to_dict(zone_list)
+        except Exception as e:
+            print(f"⚠️ Zone fetch failed: {e}")
+            st.session_state[zone_key] = []
+
+    zones = st.session_state.get(zone_key, [])
+
+    # ─── CHART ────────────────────────────────────────────────────────────────
+    chart_html = render_chart_html(
+        df, profiles,
+        symbol      = symbol,
+        market_open = market_open,
+        zones       = zones,
+    )
     components.html(chart_html, height=720, scrolling=False)
     st.divider()
 

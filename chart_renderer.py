@@ -119,10 +119,15 @@ def render_chart_html(
     symbol: str = "NIFTY",
     height: int = 650,
     market_open: bool = False,
+    zones: list = None,
 ) -> str:
     """Generate full HTML string for Lightweight Charts."""
 
     data      = build_chart_data(df, profiles, market_open=market_open)
+    if zones:
+        data["zones"] = zones
+    else:
+        data["zones"] = []
     DATA_JSON = json.dumps(data)
 
     last = profiles[-1] if profiles else None
@@ -313,6 +318,48 @@ canvas.height = chartEl.offsetHeight;
 chartEl.appendChild(canvas);
 const ctx = canvas.getContext('2d');
 
+// ── Draw Supply/Demand Zones ──────────────────────────────────────────────────
+function drawZones() {{
+    if (!RAW.zones || !RAW.zones.length) return;
+
+    RAW.zones.forEach(zone => {{
+        const y1 = candleSeries.priceToCoordinate(zone.high);
+        const y2 = candleSeries.priceToCoordinate(zone.low);
+        if (y1 === null || y2 === null) return;
+
+        const yTop  = Math.min(y1, y2);
+        const yBot  = Math.max(y1, y2);
+        const zoneH = Math.max(yBot - yTop, 4);
+        const W     = canvas.width;
+
+        // Zone rectangle — full width
+        ctx.save();
+        ctx.fillStyle   = zone.colorFill;
+        ctx.strokeStyle = zone.colorBorder;
+        ctx.lineWidth   = 1;
+        ctx.fillRect(0, yTop, W, zoneH);
+        // Top border line
+        ctx.beginPath();
+        ctx.moveTo(0,  yTop);
+        ctx.lineTo(W,  yTop);
+        ctx.stroke();
+        // Bottom border line
+        ctx.beginPath();
+        ctx.moveTo(0,  yBot);
+        ctx.lineTo(W,  yBot);
+        ctx.stroke();
+        ctx.restore();
+
+        // Zone label — right side
+        ctx.save();
+        ctx.font      = 'bold 10px sans-serif';
+        ctx.fillStyle = zone.labelColor;
+        ctx.textAlign = 'right';
+        ctx.fillText(zone.label, W - 75, yTop + zoneH / 2 + 4);
+        ctx.restore();
+    }});
+}}
+
 function renderAll() {{
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const ts = chart.timeScale();
@@ -377,6 +424,7 @@ function renderAll() {{
 
     updateLabels();
     drawSurgeMarkers();
+    drawZones();
 }}
 
 // ── Volume Surge Markers on canvas only ──────────────────────────────────────
